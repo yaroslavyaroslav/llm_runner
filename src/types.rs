@@ -41,7 +41,7 @@ impl OpenAIMessage {
             .iter()
             .map(|item| MessageContent {
                 r#type: OpenAIMessageType::Text,
-                content: ContentWrapper::Text(item.content.clone()), // Adjusted here
+                content: ContentWrapper::Text(item.content.clone()),
             })
             .collect();
 
@@ -176,14 +176,6 @@ pub struct OpenAIResponse {
     pub choices: Vec<Choice>,
 }
 
-pub fn encode_response(response: &OpenAIResponse) -> String {
-    serde_json::to_string(response).unwrap()
-}
-
-pub fn decode_response(json: &str) -> OpenAIResponse {
-    serde_json::from_str(json).unwrap()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,7 +183,7 @@ mod tests {
 
     #[test]
     fn test_openai_message_serialization() {
-        let serialized = encode_response(&OpenAIResponse {
+        let response = OpenAIResponse {
             id: Some("123".to_string()),
             object: Some("openai_response".to_string()),
             created: Some(1616161616),
@@ -205,8 +197,12 @@ mod tests {
                     tool_calls: None,
                 }],
             }],
-        });
+        };
 
+        // Serialize the response directly to JSON
+        let serialized = serde_json::to_string(&response).unwrap();
+
+        // Explicitly define the expected JSON directly
         let expected_json = json!({
             "id": "123",
             "object": "openai_response",
@@ -227,11 +223,62 @@ mod tests {
             ]
         });
 
+        // Compare the serialized JSON string with generated JSON value
+        let actual_json: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(actual_json, expected_json);
+    }
+
+    #[test]
+    fn test_assistant_message_with_tool_call() {
+        use super::*;
+
+        let assistant_message = AssistantMessage {
+            role: Roles::Assistant,
+            content: Some("This is a response with a tool call.".to_string()),
+            tool_calls: Some(vec![ToolCall {
+                index: 0,
+                id: "tool_call_1".to_string(),
+                r#type: "function_call".to_string(),
+                function: Function {
+                    name: "example_function".to_string(),
+                    arguments: HashMap::from([
+                        ("arg1".to_string(), serde_json::json!("value1")),
+                        ("arg2".to_string(), serde_json::json!("value2")),
+                    ]),
+                },
+            }]),
+        };
+
+        let serialized = serde_json::to_string(&assistant_message).unwrap();
+        println!("{}", serialized);
+
+        let expected_json = serde_json::json!({
+            "role": "assistant",
+            "content": "This is a response with a tool call.",
+            "tool_calls": [
+                {
+                    "index": 0,
+                    "id": "tool_call_1",
+                    "type": "function_call",
+                    "function": {
+                        "name": "example_function",
+                        "arguments": {
+                            "arg1": "value1",
+                            "arg2": "value2"
+                        }
+                    }
+                }
+            ]
+        });
+
         assert_eq!(
-            serde_json::to_value(serde_json::from_str::<OpenAIResponse>(&serialized).unwrap())
-                .unwrap(),
+            serde_json::from_str::<serde_json::Value>(&serialized).unwrap(),
             expected_json
         );
+
+        let deserialized: AssistantMessage =
+            serde_json::from_str(&serialized).expect("Failed to deserialize");
+        assert_eq!(deserialized, assistant_message);
     }
 
     #[test]
@@ -272,7 +319,7 @@ mod tests {
             "content": [
                 {
                     "type": "text",
-                    "text": "Text string", // corrected based on the struct
+                    "text": "Text string",
                 },
                 {
                     "type": "image_url",
@@ -327,7 +374,7 @@ mod tests {
             ]
         }"#;
 
-        let response: OpenAIResponse = decode_response(json_data);
+        let response: OpenAIResponse = serde_json::from_str(json_data).unwrap();
 
         assert_eq!(response.id, Some("123".to_string()));
         assert_eq!(response.object, Some("openai_response".to_string()));
@@ -340,5 +387,32 @@ mod tests {
             response.choices[0].message[0].content,
             Some("Response text".to_string())
         );
+    }
+
+    use std::any::Any;
+    #[test]
+    fn test_deserialize_mixed_messages() {
+        let jsonl_data = r#"
+            {"role": "assistant", "content": "Hello, how can I help?", "tool_calls": null}
+            {"role": "user", "content": [{"type": "text", "text": "What is the weather today?"}], "path": null, "scope_name": null, "tool_call_id": null, "name": "UserMessage"}
+        "#;
+
+        let messages: Vec<Box<dyn Any>> = jsonl_data
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                let data: serde_json::Value = serde_json::from_str(line).unwrap();
+
+                if data.get("role") == Some(&serde_json::Value::String("assistant".to_string())) {
+                    Box::new(serde_json::from_value::<AssistantMessage>(data).unwrap())
+                        as Box<dyn Any>
+                } else {
+                    Box::new(serde_json::from_value::<OpenAIMessage>(data).unwrap()) as Box<dyn Any>
+                }
+            })
+            .collect();
+
+        assert!(messages[0].downcast_ref::<AssistantMessage>().is_some());
+        assert!(messages[1].downcast_ref::<OpenAIMessage>().is_some());
     }
 }

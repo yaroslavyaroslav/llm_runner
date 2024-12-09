@@ -9,6 +9,23 @@ pub enum OpenAIMessageType {
     InputAudio,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct AssistantSettings {
+    token: String,
+    url: String,
+    chat_model: String,
+    temperature: f64,
+    max_tokens: i32,
+    max_completion_tokens: i32,
+    top_p: f64,
+    stream: bool,
+    parallel_tool_calls: bool,
+    tools: bool,
+    advertisement: bool,
+    assistant_role: String,
+}
+
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Roles {

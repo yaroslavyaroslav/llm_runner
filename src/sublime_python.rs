@@ -1,8 +1,4 @@
-use pyo3::{
-    prelude::*,
-    sync::GILOnceCell,
-    types::{PyDict, PyType},
-};
+use pyo3::{prelude::*, types::PyDict};
 
 impl FromPyObject<'_> for Settings {
     fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -15,9 +11,8 @@ impl FromPyObject<'_> for Settings {
 }
 
 #[pyclass]
-struct Window {}
+pub struct Window {}
 
-// #[derive(IntoPyObject)]
 #[pyclass]
 pub struct Settings {
     pub settings_object: Py<PyDict>,
@@ -25,8 +20,6 @@ pub struct Settings {
 
 #[pymethods]
 impl Settings {
-    // mut settings_object: Item
-
     pub fn get(&self, py: Python, key: &str) -> PyResult<PyObject> {
         let dict = self.settings_object.clone_ref(py);
         let another_dict = dict.into_bound(py);
@@ -41,21 +34,12 @@ pub struct Sheets {}
 
 #[pyfunction(text_signature = "(module='default_module')")]
 pub fn load_settings<'py>(py: Python<'py>, module: &str, string: &str) -> PyResult<Settings> {
-    static SUBLIME: GILOnceCell<Py<PyType>> = GILOnceCell::new();
+    let function_name = "load_settings";
+    let func = py.import(module)?.getattr(function_name)?;
     let args = (string,);
-    // let sublime = PyModule::import(py, "sublime");
-    let sublime = SUBLIME.import(py, module, "load_settings")?;
-    sublime.call1(args)?.extract().into()
-}
+    let settings = func.call1(args)?;
 
-#[pymodule]
-fn sublime_wrapper(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // m.add_class::<View>()?;
-    m.add_class::<Window>()?;
-    m.add_class::<Settings>()?;
-    m.add_class::<Sheets>()?;
-    let _ = m.add_function(wrap_pyfunction!(load_settings, m)?);
-    Ok(())
+    settings.extract().into()
 }
 
 // Mock sublime module for testing

@@ -21,11 +21,15 @@ pub struct Settings {
 #[pymethods]
 impl Settings {
     pub fn get(&self, py: Python, key: &str) -> PyResult<PyObject> {
-        let dict = self.settings_object.clone_ref(py);
-        let another_dict = dict.into_bound(py);
-        let value = another_dict.get_item(key)?.unwrap();
+        let dict = self.settings_object.clone_ref(py).into_bound(py);
+        let value = dict.get_item(key)?.unwrap();
 
         Ok(value.unbind())
+    }
+
+    pub fn set(&self, py: Python, key: &str, value: PyObject) -> PyResult<()> {
+        let dict = self.settings_object.clone_ref(py).into_bound(py);
+        dict.set_item(key, value)
     }
 }
 

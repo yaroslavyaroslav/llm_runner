@@ -10,7 +10,6 @@ use tokio::sync::mpsc;
 
 use crate::types::AssistantSettings;
 
-// Define the errors
 #[derive(Debug)]
 pub(crate) enum OpenAIErrors {
     ContextLengthExceededException,
@@ -19,7 +18,6 @@ pub(crate) enum OpenAIErrors {
     InvalidHeaderError(String),
     JsonError(serde_json::Error),
 }
-// Define the network client
 pub(crate) struct NetworkClient {
     client: Client,
     headers: HeaderMap,
@@ -51,7 +49,6 @@ impl NetworkClient {
         Self { client, headers }
     }
 
-    // Prepare and execute the request
     pub(crate) fn prepare_payload<T>(
         &self,
         settings: AssistantSettings,
@@ -108,10 +105,10 @@ impl NetworkClient {
     pub async fn execute_response<T>(
         &self,
         request: Request,
-        sender: Option<mpsc::Sender<String>>, // Sender for "data" field updates
+        sender: Option<mpsc::Sender<String>>,
     ) -> Result<T, Box<dyn Error>>
     where
-        T: DeserializeOwned, // Ensures T can be deserialized from JSON
+        T: DeserializeOwned,
     {
         let response = self.client.execute(request).await?;
 
@@ -166,14 +163,43 @@ fn merge_json(base: &mut Value, addition: &Value) {
                     if let Some(Value::String(existing_value)) = base_map.get_mut(key) {
                         if let Value::String(addition_value) = value {
                             existing_value.push_str(addition_value);
-                            continue; // Skip default merge logic for "content"
+                            continue;
+                        }
+                    }
+                }
+                if key == "tool_calls" {
+                    if let (Some(Value::Array(base_array)), Value::Array(addition_array)) =
+                        (base_map.get_mut(key), value)
+                    {
+                        for (base_item, addition_item) in
+                            base_array.iter_mut().zip(addition_array.iter())
+                        {
+                            if let (
+                                Some(Value::String(base_args)),
+                                Some(Value::String(addition_args)),
+                            ) = (
+                                base_item
+                                    .get_mut("function")
+                                    .and_then(|f| f.get_mut("arguments")),
+                                addition_item
+                                    .get("function")
+                                    .and_then(|f| f.get("arguments")),
+                            ) {
+                                base_args.push_str(addition_args);
+                            }
                         }
                     }
                 }
                 merge_json(base_map.entry(key).or_insert(Value::Null), value);
             }
         }
+        (Value::Array(base_array), Value::Array(addition_array)) => {
+            let mut base_object = base_array[0].clone();
+            let additional_object = addition_array[0].clone();
+            merge_json(&mut base_object, &additional_object);
+        }
         (base, addition) => {
+            dbg!(&base);
             *base = addition.clone();
         }
     }
@@ -183,6 +209,15 @@ fn obtain_delta(map: &Map<String, Value>) -> Option<String> {
     if let Some(delta) = map.get("delta") {
         if let Some(content) = delta.get("content") {
             return content.as_str().map(|s| s.to_string());
+        }
+        if let Some(function_name) = delta
+            .get("tool_calls")
+            .and_then(|v| v.as_array())
+            .and_then(|array| array.get(0))
+            .and_then(|first_item| first_item.get("function"))
+            .and_then(|function| function.get("name"))
+        {
+            return function_name.as_str().map(|s| s.to_string());
         }
     }
 
@@ -358,5 +393,101 @@ mod tests {
         let some = binding.get("delta").unwrap().get("content").unwrap();
         assert_eq!(events, vec!["Hello world!", "Second event", "Third  event"]);
         assert_eq!(events.join(""), some.as_str().unwrap().to_string());
+    }
+
+    #[tokio::test]
+    async fn test_sse_tool_calls_streaming() {
+        let mock_server = MockServer::start().await;
+
+        // SSE content for testing tool_calls
+        let sse_data = r#"
+            data: { "delta": { "tool_calls": [{ "index": 0, "id": "tool_1", "type": "function_call", "function": { "name": "fetch_data", "arguments": "{ " }}] } }
+
+            data: { "delta": { "tool_calls": [{ "index": 0, "id": "tool_2", "type": "function_call", "function": { "arguments": "\"param1\": \"value1\"" }}] } }
+
+            data: { "delta": { "tool_calls": [{ "index": 0, "id": "tool_3", "type": "function_call", "function": { "arguments": " }" }}] } }
+        "#;
+
+        let _mock = wiremock::Mock::given(method("POST"))
+            .and(header(CONTENT_TYPE.as_str(), "content/json"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header(CONTENT_TYPE.as_str(), "text/event-stream; charset=utf-8")
+                    .set_body_raw(sse_data.as_bytes(), "text/event-stream; charset=utf-8")
+                    .set_body_string(sse_data),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = NetworkClient::new();
+        let settings = AssistantSettings {
+            token: "token".to_string(),
+            url: mock_server.uri(),
+            chat_model: "model".to_string(),
+            temperature: 0.5,
+            max_tokens: 100,
+            max_completion_tokens: 100,
+            top_p: 0.5,
+            stream: true,
+            parallel_tool_calls: false,
+            tools: true,
+            advertisement: false,
+            assistant_role: "".to_string(),
+        };
+
+        let messages = vec![TestMessage {
+            role: "role".to_string(),
+            content: "content".to_string(),
+        }];
+
+        let payload = client.prepare_payload(settings.clone(), messages).unwrap();
+        let request = client.prepare_request(settings, payload).unwrap();
+
+        let (tx, mut rx) = mpsc::channel(10);
+
+        let result = client
+            .execute_response::<Map<String, Value>>(request, Some(tx))
+            .await;
+
+        let mut function_name = vec![];
+        while let Some(data) = rx.recv().await {
+            function_name.push(data);
+        }
+
+        let binding = result.unwrap();
+        let tool_calls_array = binding
+            .get("delta")
+            .unwrap()
+            .get("tool_calls")
+            .unwrap()
+            .as_array()
+            .unwrap();
+
+        assert_eq!(function_name.join(""), "fetch_data");
+
+        dbg!(tool_calls_array);
+        assert_eq!(
+            tool_calls_array[0]
+                .get("function")
+                .unwrap()
+                .get("name")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "fetch_data"
+        );
+
+        // let string = r#""{ "param1": "value1" }""#;
+        dbg!(tool_calls_array);
+        assert_eq!(
+            tool_calls_array[0]
+                .get("function")
+                .unwrap()
+                .get("arguments")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            r#"{ "param1": "value1" }"#
+        );
     }
 }

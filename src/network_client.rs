@@ -145,7 +145,6 @@ impl NetworkClient {
                 return Err(format!("Request failed with status: {}", response.status()).into());
             }
         } else {
-            // No sender provided, handle as a regular request and deserialize the response body into T
             if response.status().is_success() {
                 let payload = response.json::<T>().await?;
                 return Ok(payload);
@@ -163,4 +162,147 @@ fn extract_data_field(data: &str) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Deserialize;
+    use tokio::test;
+    use wiremock::matchers::{header, method};
+    use wiremock::{MockServer, ResponseTemplate};
+
+    #[derive(Serialize, Deserialize, Debug)]
+    struct TestMessage {
+        role: String,
+        content: String,
+    }
+
+    #[derive(Serialize, Deserialize, Debug)]
+    struct TestResponse {
+        id: String,
+        object: String,
+    }
+
+    #[test]
+    async fn test_prepare_payload() {
+        let client = NetworkClient::new();
+        let settings = AssistantSettings {
+            token: "token".to_string(),
+            url: "url".to_string(),
+            chat_model: "model".to_string(),
+            temperature: 0.5,
+            max_tokens: 100,
+            max_completion_tokens: 100,
+            top_p: 0.5,
+            stream: false,
+            parallel_tool_calls: false,
+            tools: false,
+            advertisement: false,
+            assistant_role: "".to_string(),
+        };
+
+        let messages = vec![TestMessage {
+            role: "role".to_string(),
+            content: "content".to_string(),
+        }];
+
+        let payload = client.prepare_payload(settings, messages).unwrap();
+
+        let expected_payload = serde_json::json!([
+            {
+                "role": "role",
+                "content": "content",
+            },
+        ])
+        .to_string();
+
+        assert_eq!(payload, expected_payload);
+    }
+
+    #[tokio::test]
+    async fn test_execute_response() {
+        let mock_server = MockServer::start().await;
+        let _mock = wiremock::Mock::given(method("POST"))
+            .and(header(CONTENT_TYPE.as_str(), "content/json"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string("{\"id\": \"1\", \"object\": \"object\"}"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = NetworkClient::new();
+        let settings = AssistantSettings {
+            token: "token".to_string(),
+            url: mock_server.uri(),
+            chat_model: "model".to_string(),
+            temperature: 0.5,
+            max_tokens: 100,
+            max_completion_tokens: 100,
+            top_p: 0.5,
+            stream: false,
+            parallel_tool_calls: false,
+            tools: false,
+            advertisement: false,
+            assistant_role: "".to_string(),
+        };
+
+        let messages = vec![TestMessage {
+            role: "role".to_string(),
+            content: "content".to_string(),
+        }];
+
+        let payload = client.prepare_payload(settings.clone(), messages).unwrap();
+
+        let request = client.prepare_request(settings, payload).unwrap();
+
+        let response: Result<TestResponse, _> = client.execute_response(request, None).await;
+
+        assert_eq!(response.as_ref().unwrap().id, "1".to_string());
+        assert_eq!(response.unwrap().object, "object".to_string());
+    }
+
+    #[tokio::test]
+    async fn test_execute_response_with_sender() {
+        let mock_server = MockServer::start().await;
+        let _mock = wiremock::Mock::given(method("POST"))
+            .and(header(CONTENT_TYPE.as_str(), "content/json"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                "{\"data\": \"Hello, world!\", \"id\": \"1\", \"object\": \"object\"}",
+            ))
+            .mount(&mock_server)
+            .await;
+
+        let client = NetworkClient::new();
+        let settings = AssistantSettings {
+            token: "token".to_string(),
+            url: mock_server.uri(),
+            chat_model: "model".to_string(),
+            temperature: 0.5,
+            max_tokens: 100,
+            max_completion_tokens: 100,
+            top_p: 0.5,
+            stream: true,
+            parallel_tool_calls: false,
+            tools: false,
+            advertisement: false,
+            assistant_role: "".to_string(),
+        };
+
+        let messages = vec![TestMessage {
+            role: "role".to_string(),
+            content: "content".to_string(),
+        }];
+
+        let payload = client.prepare_payload(settings.clone(), messages).unwrap();
+
+        let request = client.prepare_request(settings, payload).unwrap();
+
+        let (tx, mut rx) = mpsc::channel(10);
+        let _: TestResponse = client.execute_response(request, Some(tx)).await.unwrap();
+
+        let received_data = rx.recv().await;
+        assert_eq!(received_data.unwrap(), "Hello, world!");
+    }
 }

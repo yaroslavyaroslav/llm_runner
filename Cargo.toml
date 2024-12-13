@@ -15,6 +15,7 @@ tokio = { version = "1", features = ["full"] }
 futures-util = "0.3"
 
 [dev-dependencies]
+wiremock = "0.5"
 tempfile = "3.4"
 
 [features]

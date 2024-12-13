@@ -9,7 +9,7 @@ pub enum OpenAIMessageType {
     InputAudio,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct AssistantSettings {
     pub token: String,

@@ -11,19 +11,19 @@ pub enum OpenAIMessageType {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-struct AssistantSettings {
-    token: String,
-    url: String,
-    chat_model: String,
-    temperature: f64,
-    max_tokens: i32,
-    max_completion_tokens: i32,
-    top_p: f64,
-    stream: bool,
-    parallel_tool_calls: bool,
-    tools: bool,
-    advertisement: bool,
-    assistant_role: String,
+pub struct AssistantSettings {
+    pub token: String,
+    pub url: String,
+    pub chat_model: String,
+    pub temperature: f64,
+    pub max_tokens: i32,
+    pub max_completion_tokens: i32,
+    pub top_p: f64,
+    pub stream: bool,
+    pub parallel_tool_calls: bool,
+    pub tools: bool,
+    pub advertisement: bool,
+    pub assistant_role: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]

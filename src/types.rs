@@ -177,11 +177,42 @@ pub struct AssistantMessage {
     pub tool_calls: Option<Vec<ToolCall>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+impl<'de> serde::de::Deserialize<'de> for Choice {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct TempChoice {
+            index: usize,
+            #[serde(default)] // These fields are optional, so use default.
+            message: Option<AssistantMessage>,
+            #[serde(default)]
+            delta: Option<AssistantMessage>,
+            finish_reason: Option<String>,
+        }
+
+        let temp = TempChoice::deserialize(deserializer)?;
+
+        // Use `message` if present; otherwise, fallback to `delta`.
+        let message = temp
+            .message
+            .or(temp.delta)
+            .ok_or_else(|| serde::de::Error::missing_field("message or delta"))?;
+
+        Ok(Choice {
+            index: temp.index,
+            finish_reason: temp.finish_reason,
+            message,
+        })
+    }
+}
+
+#[derive(Serialize, Debug, PartialEq)]
 pub struct Choice {
     pub index: usize,
     pub finish_reason: Option<String>,
-    pub message: Vec<AssistantMessage>,
+    pub message: AssistantMessage,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -208,11 +239,11 @@ mod tests {
             choices: vec![Choice {
                 index: 0,
                 finish_reason: None,
-                message: vec![AssistantMessage {
+                message: AssistantMessage {
                     role: Roles::Assistant,
                     content: Some("Response text".to_string()),
                     tool_calls: None,
-                }],
+                },
             }],
         };
 
@@ -229,13 +260,11 @@ mod tests {
                 {
                     "index": 0,
                     "finish_reason": null,
-                    "message": [
-                        {
-                            "role": "assistant",
-                            "content": "Response text",
-                            "tool_calls": null
-                        }
-                    ]
+                    "message": {
+                        "role": "assistant",
+                        "content": "Response text",
+                        "tool_calls": null
+                    }
                 }
             ]
         });
@@ -380,13 +409,11 @@ mod tests {
                 {
                     "index": 0,
                     "finish_reason": null,
-                    "message": [
-                        {
-                            "role": "assistant",
-                            "content": "Response text",
-                            "tool_calls": null
-                        }
-                    ]
+                    "message": {
+                        "role": "assistant",
+                        "content": "Response text",
+                        "tool_calls": null
+                    }
                 }
             ]
         }"#;
@@ -399,9 +426,9 @@ mod tests {
         assert_eq!(response.model, "gpt-3.5");
         assert_eq!(response.choices.len(), 1);
         assert_eq!(response.choices[0].index, 0);
-        assert_eq!(response.choices[0].message[0].role, Roles::Assistant);
+        assert_eq!(response.choices[0].message.role, Roles::Assistant);
         assert_eq!(
-            response.choices[0].message[0].content,
+            response.choices[0].message.content,
             Some("Response text".to_string())
         );
     }

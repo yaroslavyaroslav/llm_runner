@@ -1,5 +1,6 @@
 use futures_util::StreamExt;
 use serde::Serialize;
+use serde_json::{Map, Value};
 use std::error::Error;
 
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
@@ -114,7 +115,7 @@ impl NetworkClient {
     {
         let response = self.client.execute(request).await?;
 
-        let mut buffer = String::new();
+        let mut composable_response = serde_json::json!({});
 
         if let Some(sender) = sender {
             if response.status().is_success() {
@@ -125,22 +126,24 @@ impl NetworkClient {
 
                     let data = String::from_utf8_lossy(&chunk);
 
-                    if let Some(refined_data) = extract_data_field(&data) {
-                        if let Err(err) = sender.send(refined_data).await {
-                            eprintln!("Failed to send data: {}", err);
+                    for line in data.lines() {
+                        if let Some(stripped) = line.trim_start().strip_prefix("data: ") {
+                            let tmp_dict: Map<String, Value> = serde_json::from_str(stripped)?;
+                            let json_chunk: Value = serde_json::from_str(stripped)?;
+
+                            merge_json(&mut composable_response, &json_chunk);
+
+                            if let Some(content) = obtain_delta(&tmp_dict) {
+                                if sender.send(content).await.is_err() {
+                                    eprintln!("Failed to send SSE data");
+                                }
+                            }
                         }
                     }
-
-                    buffer.push_str(&data);
                 }
-
                 drop(sender);
 
-                let payload: Result<T, _> = serde_json::from_str(&buffer);
-                return match payload {
-                    Ok(data) => Ok(data),
-                    Err(_) => Err("Failed to deserialize payload".into()),
-                };
+                return Ok(serde_json::from_value::<T>(composable_response)?);
             } else {
                 return Err(format!("Request failed with status: {}", response.status()).into());
             }
@@ -155,12 +158,42 @@ impl NetworkClient {
     }
 }
 
-fn extract_data_field(data: &str) -> Option<String> {
-    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(data) {
-        if let Some(data_field) = json_value.get("data") {
-            return data_field.as_str().map(|s| s.to_string());
+fn merge_json(base: &mut Value, addition: &Value) {
+    match (base, addition) {
+        (Value::Object(base_map), Value::Object(addition_map)) => {
+            for (key, value) in addition_map {
+                if key == "content" && base_map.contains_key(key) {
+                    if let Some(Value::String(existing_value)) = base_map.get_mut(key) {
+                        if let Value::String(addition_value) = value {
+                            existing_value.push_str(addition_value);
+                            continue; // Skip default merge logic for "content"
+                        }
+                    }
+                }
+                merge_json(base_map.entry(key).or_insert(Value::Null), value);
+            }
+        }
+        (base, addition) => {
+            *base = addition.clone();
         }
     }
+}
+
+fn obtain_delta(map: &Map<String, Value>) -> Option<String> {
+    if let Some(delta) = map.get("delta") {
+        if let Some(content) = delta.get("content") {
+            return content.as_str().map(|s| s.to_string());
+        }
+    }
+
+    for value in map.values() {
+        if let Some(nested_map) = value.as_object() {
+            if let Some(result) = obtain_delta(nested_map) {
+                return Some(result);
+            }
+        }
+    }
+
     None
 }
 
@@ -264,13 +297,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_execute_response_with_sender() {
+    async fn test_sse_streaming() {
         let mock_server = MockServer::start().await;
+
+        // SSE content for testing
+        let sse_data = r#"
+            data: { "delta": { "content": "Hello world!" } }
+
+            data: { "delta": { "content": "Second event" } }
+
+            data: { "delta": { "content": "Third  event" } }
+        "#;
         let _mock = wiremock::Mock::given(method("POST"))
             .and(header(CONTENT_TYPE.as_str(), "content/json"))
-            .respond_with(ResponseTemplate::new(200).set_body_string(
-                "{\"data\": \"Hello, world!\", \"id\": \"1\", \"object\": \"object\"}",
-            ))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header(CONTENT_TYPE.as_str(), "text/event-stream; charset=utf-8")
+                    .set_body_raw(sse_data.as_bytes(), "text/event-stream; charset=utf-8")
+                    .set_body_string(sse_data),
+            )
             .mount(&mock_server)
             .await;
 
@@ -296,13 +341,22 @@ mod tests {
         }];
 
         let payload = client.prepare_payload(settings.clone(), messages).unwrap();
-
         let request = client.prepare_request(settings, payload).unwrap();
 
         let (tx, mut rx) = mpsc::channel(10);
-        let _: TestResponse = client.execute_response(request, Some(tx)).await.unwrap();
 
-        let received_data = rx.recv().await;
-        assert_eq!(received_data.unwrap(), "Hello, world!");
+        let result = client
+            .execute_response::<Map<String, Value>>(request, Some(tx))
+            .await;
+
+        let mut events = vec![];
+        while let Some(data) = rx.recv().await {
+            events.push(data);
+        }
+
+        let binding = result.unwrap();
+        let some = binding.get("delta").unwrap().get("content").unwrap();
+        assert_eq!(events, vec!["Hello world!", "Second event", "Third  event"]);
+        assert_eq!(events.join(""), some.as_str().unwrap().to_string());
     }
 }

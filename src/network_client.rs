@@ -11,14 +11,14 @@ use tokio::sync::mpsc;
 use crate::types::AssistantSettings;
 
 #[derive(Debug)]
-pub(crate) enum OpenAIErrors {
+pub enum OpenAIErrors {
     ContextLengthExceededException,
     UnknownException,
     ReqwestError(reqwest::Error),
     InvalidHeaderError(String),
     JsonError(serde_json::Error),
 }
-pub(crate) struct NetworkClient {
+pub struct NetworkClient {
     client: Client,
     headers: HeaderMap,
 }
@@ -155,42 +155,54 @@ impl NetworkClient {
     }
 }
 
+/// This function is actually handles the SSE stream from the llm
+/// There are two cases handled here so far:
+///  - llm text answer: the `"content"` field is getting concantinated during this call
+///  - llm function call: the `"tool_calls"[0]."function"."arguments"` field is getting concantinated during this call
+///
+/// The main assumption here is that the response can never be mixed
+/// to contain both `"content"` and `"tool_calls"` in a single stream.
 fn merge_json(base: &mut Value, addition: &Value) {
     match (base, addition) {
         (Value::Object(base_map), Value::Object(addition_map)) => {
             for (key, value) in addition_map {
-                if key == "content" && base_map.contains_key(key) {
-                    if let Some(Value::String(existing_value)) = base_map.get_mut(key) {
-                        if let Value::String(addition_value) = value {
-                            existing_value.push_str(addition_value);
+                match key.as_str() {
+                    "content" if base_map.contains_key(key) => {
+                        if value.is_null() {
+                            eprintln!("Skipping null 'content' field");
                             continue;
                         }
-                    }
-                }
-                if key == "tool_calls" {
-                    if let (Some(Value::Array(base_array)), Value::Array(addition_array)) =
-                        (base_map.get_mut(key), value)
-                    {
-                        for (base_item, addition_item) in
-                            base_array.iter_mut().zip(addition_array.iter())
-                        {
-                            if let (
-                                Some(Value::String(base_args)),
-                                Some(Value::String(addition_args)),
-                            ) = (
-                                base_item
-                                    .get_mut("function")
-                                    .and_then(|f| f.get_mut("arguments")),
-                                addition_item
-                                    .get("function")
-                                    .and_then(|f| f.get("arguments")),
-                            ) {
-                                base_args.push_str(addition_args);
+                        if let Some(Value::String(existing_value)) = base_map.get_mut(key) {
+                            if let Value::String(addition_value) = value {
+                                existing_value.push_str(addition_value);
                             }
                         }
                     }
+                    "tool_calls" => {
+                        if let (Some(Value::Array(base_array)), Value::Array(addition_array)) =
+                            (base_map.get_mut(key), value)
+                        {
+                            for (base_item, addition_item) in
+                                base_array.iter_mut().zip(addition_array.iter())
+                            {
+                                if let (
+                                    Some(Value::String(base_args)),
+                                    Some(Value::String(addition_args)),
+                                ) = (
+                                    base_item
+                                        .get_mut("function")
+                                        .and_then(|f| f.get_mut("arguments")),
+                                    addition_item
+                                        .get("function")
+                                        .and_then(|f| f.get("arguments")),
+                                ) {
+                                    base_args.push_str(addition_args);
+                                }
+                            }
+                        }
+                    }
+                    _ => merge_json(base_map.entry(key).or_insert(Value::Null), value),
                 }
-                merge_json(base_map.entry(key).or_insert(Value::Null), value);
             }
         }
         (Value::Array(base_array), Value::Array(addition_array)) => {
@@ -205,10 +217,16 @@ fn merge_json(base: &mut Value, addition: &Value) {
     }
 }
 
+/// This function extracts a plain string for streaming it into UI
+/// This is either `"content"` field (the actual answer of the llm) or
+/// a function call, where it is the `"arguments"` the one that actually streams.
+///
+/// Thus there's low sense of showing the exact arguments of the call to a user
+/// only `"tool_calls"[0]."function"."name"` streams in the latter case here (it's a one shot).
 fn obtain_delta(map: &Map<String, Value>) -> Option<String> {
     if let Some(delta) = map.get("delta") {
-        if let Some(content) = delta.get("content") {
-            return content.as_str().map(|s| s.to_string());
+        if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
+            return Some(content.to_string());
         }
         if let Some(function_name) = delta
             .get("tool_calls")
@@ -401,7 +419,7 @@ mod tests {
 
         // SSE content for testing tool_calls
         let sse_data = r#"
-            data: { "delta": { "tool_calls": [{ "index": 0, "id": "tool_1", "type": "function_call", "function": { "name": "fetch_data", "arguments": "{ " }}] } }
+            data: { "delta": { "content": null, "tool_calls": [{ "index": 0, "id": "tool_1", "type": "function_call", "function": { "name": "fetch_data", "arguments": "{ " }}] } }
 
             data: { "delta": { "tool_calls": [{ "index": 0, "id": "tool_2", "type": "function_call", "function": { "arguments": "\"param1\": \"value1\"" }}] } }
 
@@ -477,8 +495,99 @@ mod tests {
             "fetch_data"
         );
 
-        // let string = r#""{ "param1": "value1" }""#;
         dbg!(tool_calls_array);
+        assert_eq!(
+            tool_calls_array[0]
+                .get("function")
+                .unwrap()
+                .get("arguments")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            r#"{ "param1": "value1" }"#
+        );
+    }
+
+    #[tokio::test]
+    async fn test_tool_calls_non_streaming() {
+        let mock_server = MockServer::start().await;
+
+        let non_streaming_data = r#"
+            {
+                "delta": {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "tool_1",
+                            "type": "function_call",
+                            "function": {
+                                "name": "fetch_data",
+                                "arguments": "{ \"param1\": \"value1\" }"
+                            }
+                        }
+                    ]
+                }
+            }
+        "#;
+
+        let _mock = wiremock::Mock::given(method("POST"))
+            .and(header(CONTENT_TYPE.as_str(), "content/json"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header(CONTENT_TYPE.as_str(), "application/json")
+                    .set_body_string(non_streaming_data),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = NetworkClient::new();
+        let settings = AssistantSettings {
+            token: "token".to_string(),
+            url: mock_server.uri(),
+            chat_model: "model".to_string(),
+            temperature: 0.5,
+            max_tokens: 100,
+            max_completion_tokens: 100,
+            top_p: 0.5,
+            stream: false, // Disable streaming
+            parallel_tool_calls: false,
+            tools: true,
+            advertisement: false,
+            assistant_role: "".to_string(),
+        };
+
+        let messages = vec![TestMessage {
+            role: "role".to_string(),
+            content: "content".to_string(),
+        }];
+
+        let payload = client.prepare_payload(settings.clone(), messages).unwrap();
+        let request = client.prepare_request(settings, payload).unwrap();
+
+        let result: Map<String, Value> = client
+            .execute_response::<Map<String, Value>>(request, None)
+            .await
+            .unwrap();
+
+        let tool_calls_array = result
+            .get("delta")
+            .unwrap()
+            .get("tool_calls")
+            .unwrap()
+            .as_array()
+            .unwrap();
+
+        assert_eq!(
+            tool_calls_array[0]
+                .get("function")
+                .unwrap()
+                .get("name")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "fetch_data"
+        );
+
         assert_eq!(
             tool_calls_array[0]
                 .get("function")

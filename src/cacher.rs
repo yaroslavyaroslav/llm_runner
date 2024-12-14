@@ -6,7 +6,7 @@ use std::io::{BufRead, Write};
 use std::path::Path;
 
 #[derive(Debug, Clone)]
-pub(crate) struct Cacher {
+pub struct Cacher {
     pub current_model_file: String,
     pub history_file: String,
     pub tokens_count_file: String,
@@ -66,7 +66,7 @@ impl Cacher {
         }
     }
 
-    pub(crate) fn read_entries<T>(&self) -> Result<Vec<T>, SerdeError>
+    pub fn read_entries<T>(&self) -> Result<Vec<T>, SerdeError>
     where
         T: for<'de> Deserialize<'de>,
     {
@@ -85,7 +85,7 @@ impl Cacher {
         Ok(entries)
     }
 
-    pub(crate) fn write_entry<T: Serialize>(&self, entry: &T) {
+    pub fn write_entry<T: Serialize>(&self, entry: &T) {
         let mut file = OpenOptions::new()
             .append(true)
             .create(true)
@@ -96,7 +96,7 @@ impl Cacher {
         writeln!(file, "{}", entry_json).unwrap();
     }
 
-    pub(crate) fn drop_first(&self, lines_num: usize) {
+    pub fn drop_first(&self, lines_num: usize) {
         if let Ok(file) = File::open(&self.history_file) {
             let reader = std::io::BufReader::new(file);
             let remaining_lines: Vec<_> = reader

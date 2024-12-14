@@ -404,7 +404,7 @@ mod tests {
             "id": "123",
             "object": "openai_response",
             "created": 1616161616,
-            "model": "gpt-3.5",
+            "model": "gpt-4o",
             "choices": [
                 {
                     "index": 0,
@@ -423,7 +423,43 @@ mod tests {
         assert_eq!(response.id, Some("123".to_string()));
         assert_eq!(response.object, Some("openai_response".to_string()));
         assert_eq!(response.created, Some(1616161616));
-        assert_eq!(response.model, "gpt-3.5");
+        assert_eq!(response.model, "gpt-4o");
+        assert_eq!(response.choices.len(), 1);
+        assert_eq!(response.choices[0].index, 0);
+        assert_eq!(response.choices[0].message.role, Roles::Assistant);
+        assert_eq!(
+            response.choices[0].message.content,
+            Some("Response text".to_string())
+        );
+    }
+
+    #[test]
+    fn test_openai_sse_response_deserialization() {
+        let json_data = r#"
+        {
+            "id": "123",
+            "object": "openai_response",
+            "created": 1616161616,
+            "model": "gpt-4o",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": null,
+                    "delta": {
+                        "role": "assistant",
+                        "content": "Response text",
+                        "tool_calls": null
+                    }
+                }
+            ]
+        }"#;
+
+        let response: OpenAIResponse = serde_json::from_str(json_data).unwrap();
+
+        assert_eq!(response.id, Some("123".to_string()));
+        assert_eq!(response.object, Some("openai_response".to_string()));
+        assert_eq!(response.created, Some(1616161616));
+        assert_eq!(response.model, "gpt-4o");
         assert_eq!(response.choices.len(), 1);
         assert_eq!(response.choices[0].index, 0);
         assert_eq!(response.choices[0].message.role, Roles::Assistant);

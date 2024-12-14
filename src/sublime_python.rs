@@ -37,13 +37,13 @@ impl Settings {
 pub struct Sheets {}
 
 #[pyfunction(text_signature = "(module='default_module')")]
-pub fn load_settings<'py>(py: Python<'py>, module: &str, string: &str) -> PyResult<Settings> {
+pub fn load_settings(py: Python, module: &str, string: &str) -> PyResult<Settings> {
     let function_name = "load_settings";
     let func = py.import(module)?.getattr(function_name)?;
     let args = (string,);
     let settings = func.call1(args)?;
 
-    settings.extract().into()
+    settings.extract()
 }
 
 // Mock sublime module for testing

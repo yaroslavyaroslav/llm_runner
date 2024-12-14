@@ -62,7 +62,7 @@ impl NetworkClient {
                 .into_iter()
                 .map(|m| serde_json::to_value(m))
                 .collect::<Result<Vec<serde_json::Value>, _>>()
-                .map_err(|e| OpenAIErrors::JsonError(e))?
+                .map_err(OpenAIErrors::JsonError)?
         } else {
             let mut internal_messages = vec![serde_json::json!({
                 "role": "system",
@@ -73,12 +73,12 @@ impl NetworkClient {
                     .into_iter()
                     .map(|m| serde_json::to_value(m))
                     .collect::<Result<Vec<serde_json::Value>, _>>()
-                    .map_err(|e| OpenAIErrors::JsonError(e))?,
+                    .map_err(OpenAIErrors::JsonError)?,
             );
             internal_messages
         };
 
-        serde_json::to_string(&internal_messages).map_err(|e| OpenAIErrors::JsonError(e))
+        serde_json::to_string(&internal_messages).map_err(OpenAIErrors::JsonError)
     }
 
     pub(crate) fn prepare_request(
@@ -86,7 +86,7 @@ impl NetworkClient {
         settings: AssistantSettings,
         json_payload: String,
     ) -> Result<Request, OpenAIErrors> {
-        let url = format!("{}", settings.url);
+        let url = settings.url.to_string();
         let mut headers = self.headers.clone();
         let auth_header = format!("Bearer {}", settings.token);
         let auth_header = HeaderValue::from_str(&auth_header)
@@ -99,7 +99,7 @@ impl NetworkClient {
             .headers(headers)
             .body(json_payload)
             .build()
-            .map_err(|e| OpenAIErrors::ReqwestError(e))
+            .map_err(OpenAIErrors::ReqwestError)
     }
 
     pub async fn execute_response<T>(
@@ -140,17 +140,15 @@ impl NetworkClient {
                 }
                 drop(sender);
 
-                return Ok(serde_json::from_value::<T>(composable_response)?);
+                Ok(serde_json::from_value::<T>(composable_response)?)
             } else {
-                return Err(format!("Request failed with status: {}", response.status()).into());
+                Err(format!("Request failed with status: {}", response.status()).into())
             }
+        } else if response.status().is_success() {
+            let payload = response.json::<T>().await?;
+            Ok(payload)
         } else {
-            if response.status().is_success() {
-                let payload = response.json::<T>().await?;
-                return Ok(payload);
-            } else {
-                return Err(format!("Request failed with status: {}", response.status()).into());
-            }
+            Err(format!("Request failed with status: {}", response.status()).into())
         }
     }
 }
@@ -231,7 +229,7 @@ fn obtain_delta(map: &Map<String, Value>) -> Option<String> {
         if let Some(function_name) = delta
             .get("tool_calls")
             .and_then(|v| v.as_array())
-            .and_then(|array| array.get(0))
+            .and_then(|array| array.first())
             .and_then(|first_item| first_item.get("function"))
             .and_then(|function| function.get("name"))
         {

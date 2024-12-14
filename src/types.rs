@@ -65,8 +65,8 @@ impl OpenAIMessage {
         OpenAIMessage {
             content: contents,
             role: Roles::User,
-            path: content.get(0).and_then(|c| c.path.clone()),
-            scope_name: content.get(0).and_then(|c| c.scope_name.clone()),
+            path: content.first().and_then(|c| c.path.clone()),
+            scope_name: content.first().and_then(|c| c.scope_name.clone()),
             tool_call_id: None,
             name: Some("OpenAI_completion".to_string()),
         }

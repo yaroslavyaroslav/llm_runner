@@ -11,9 +11,6 @@ impl FromPyObject<'_> for Settings {
 }
 
 #[pyclass]
-pub struct Window {}
-
-#[pyclass]
 pub struct Settings {
     pub settings_object: Py<PyDict>,
 }
@@ -32,9 +29,6 @@ impl Settings {
         dict.set_item(key, value)
     }
 }
-
-#[pyclass]
-pub struct Sheets {}
 
 #[pyfunction(text_signature = "(module='default_module')")]
 pub fn load_settings(py: Python, module: &str, string: &str) -> PyResult<Settings> {

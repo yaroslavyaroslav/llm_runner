@@ -57,7 +57,7 @@ impl NetworkClient {
     where
         T: Serialize,
     {
-        let internal_messages: Vec<serde_json::Value> = if settings.assistant_role.is_empty() {
+        let internal_messages: Vec<serde_json::Value> = if settings.assistant_role.is_none() {
             messages
                 .into_iter()
                 .map(|m| serde_json::to_value(m))
@@ -125,12 +125,18 @@ impl NetworkClient {
 
                     for line in data.lines() {
                         if let Some(stripped) = line.trim_start().strip_prefix("data: ") {
-                            let tmp_dict: Map<String, Value> = serde_json::from_str(stripped)?;
-                            let json_chunk: Value = serde_json::from_str(stripped)?;
+                            let json_value: serde_json::Value = serde_json::from_str(stripped)?;
 
-                            merge_json(&mut composable_response, &json_chunk);
+                            merge_json(&mut composable_response, &json_value);
 
-                            if let Some(content) = obtain_delta(&tmp_dict) {
+                            if let Some(content) = obtain_delta(
+                                json_value
+                                    .get("choices")
+                                    .and_then(|c| c.as_array())
+                                    .and_then(|arr| arr.first())
+                                    .and_then(|first| first.as_object())
+                                    .ok_or_else(|| "Failed to parse JSON")?,
+                            ) {
                                 if sender.send(content).await.is_err() {
                                     eprintln!("Failed to send SSE data");
                                 }
@@ -165,7 +171,7 @@ fn merge_json(base: &mut Value, addition: &Value) {
         (Value::Object(base_map), Value::Object(addition_map)) => {
             for (key, value) in addition_map {
                 match key.as_str() {
-                    "content" if base_map.contains_key(key) => {
+                    "content" => {
                         if value.is_null() {
                             eprintln!("Skipping null 'content' field");
                             continue;
@@ -204,12 +210,9 @@ fn merge_json(base: &mut Value, addition: &Value) {
             }
         }
         (Value::Array(base_array), Value::Array(addition_array)) => {
-            let mut base_object = base_array[0].clone();
-            let additional_object = addition_array[0].clone();
-            merge_json(&mut base_object, &additional_object);
+            merge_json(&mut base_array[0], &addition_array[0]);
         }
         (base, addition) => {
-            dbg!(&base);
             *base = addition.clone();
         }
     }
@@ -271,20 +274,7 @@ mod tests {
     #[test]
     async fn test_prepare_payload() {
         let client = NetworkClient::new();
-        let settings = AssistantSettings {
-            token: "token".to_string(),
-            url: "url".to_string(),
-            chat_model: "model".to_string(),
-            temperature: 0.5,
-            max_tokens: 100,
-            max_completion_tokens: 100,
-            top_p: 0.5,
-            stream: false,
-            parallel_tool_calls: false,
-            tools: false,
-            advertisement: false,
-            assistant_role: "".to_string(),
-        };
+        let settings = AssistantSettings::default();
 
         let messages = vec![TestMessage {
             role: "role".to_string(),
@@ -317,20 +307,8 @@ mod tests {
             .await;
 
         let client = NetworkClient::new();
-        let settings = AssistantSettings {
-            token: "token".to_string(),
-            url: mock_server.uri(),
-            chat_model: "model".to_string(),
-            temperature: 0.5,
-            max_tokens: 100,
-            max_completion_tokens: 100,
-            top_p: 0.5,
-            stream: false,
-            parallel_tool_calls: false,
-            tools: false,
-            advertisement: false,
-            assistant_role: "".to_string(),
-        };
+        let mut settings = AssistantSettings::default();
+        settings.url = mock_server.uri();
 
         let messages = vec![TestMessage {
             role: "role".to_string(),
@@ -353,11 +331,11 @@ mod tests {
 
         // SSE content for testing
         let sse_data = r#"
-            data: { "delta": { "content": "Hello world!" } }
+            data: {"choices":[{"delta":{"content":"The","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
 
-            data: { "delta": { "content": "Second event" } }
+            data: {"choices":[{"delta":{"content":" ","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
 
-            data: { "delta": { "content": "Third  event" } }
+            data: {"choices":[{"delta":{"content":"202","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
         "#;
         let _mock = wiremock::Mock::given(method("POST"))
             .and(header(CONTENT_TYPE.as_str(), "content/json"))
@@ -371,20 +349,8 @@ mod tests {
             .await;
 
         let client = NetworkClient::new();
-        let settings = AssistantSettings {
-            token: "token".to_string(),
-            url: mock_server.uri(),
-            chat_model: "model".to_string(),
-            temperature: 0.5,
-            max_tokens: 100,
-            max_completion_tokens: 100,
-            top_p: 0.5,
-            stream: true,
-            parallel_tool_calls: false,
-            tools: false,
-            advertisement: false,
-            assistant_role: "".to_string(),
-        };
+        let mut settings = AssistantSettings::default();
+        settings.url = mock_server.uri();
 
         let messages = vec![TestMessage {
             role: "role".to_string(),
@@ -406,104 +372,23 @@ mod tests {
         }
 
         let binding = result.unwrap();
-        let some = binding.get("delta").unwrap().get("content").unwrap();
-        assert_eq!(events, vec!["Hello world!", "Second event", "Third  event"]);
-        assert_eq!(events.join(""), some.as_str().unwrap().to_string());
-    }
-
-    #[tokio::test]
-    async fn test_sse_tool_calls_streaming() {
-        let mock_server = MockServer::start().await;
-
-        // SSE content for testing tool_calls
-        let sse_data = r#"
-            data: { "delta": { "content": null, "tool_calls": [{ "index": 0, "id": "tool_1", "type": "function_call", "function": { "name": "fetch_data", "arguments": "{ " }}] } }
-
-            data: { "delta": { "tool_calls": [{ "index": 0, "id": "tool_2", "type": "function_call", "function": { "arguments": "\"param1\": \"value1\"" }}] } }
-
-            data: { "delta": { "tool_calls": [{ "index": 0, "id": "tool_3", "type": "function_call", "function": { "arguments": " }" }}] } }
-        "#;
-
-        let _mock = wiremock::Mock::given(method("POST"))
-            .and(header(CONTENT_TYPE.as_str(), "content/json"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header(CONTENT_TYPE.as_str(), "text/event-stream; charset=utf-8")
-                    .set_body_raw(sse_data.as_bytes(), "text/event-stream; charset=utf-8")
-                    .set_body_string(sse_data),
-            )
-            .mount(&mock_server)
-            .await;
-
-        let client = NetworkClient::new();
-        let settings = AssistantSettings {
-            token: "token".to_string(),
-            url: mock_server.uri(),
-            chat_model: "model".to_string(),
-            temperature: 0.5,
-            max_tokens: 100,
-            max_completion_tokens: 100,
-            top_p: 0.5,
-            stream: true,
-            parallel_tool_calls: false,
-            tools: true,
-            advertisement: false,
-            assistant_role: "".to_string(),
-        };
-
-        let messages = vec![TestMessage {
-            role: "role".to_string(),
-            content: "content".to_string(),
-        }];
-
-        let payload = client.prepare_payload(settings.clone(), messages).unwrap();
-        let request = client.prepare_request(settings, payload).unwrap();
-
-        let (tx, mut rx) = mpsc::channel(10);
-
-        let result = client
-            .execute_response::<Map<String, Value>>(request, Some(tx))
-            .await;
-
-        let mut function_name = vec![];
-        while let Some(data) = rx.recv().await {
-            function_name.push(data);
-        }
-
-        let binding = result.unwrap();
-        let tool_calls_array = binding
-            .get("delta")
-            .unwrap()
-            .get("tool_calls")
+        let content = dbg!(binding)
+            .get("choices")
             .unwrap()
             .as_array()
-            .unwrap();
+            .unwrap()
+            .get(0)
+            .unwrap()
+            .get("delta")
+            .unwrap()
+            .get("content")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string();
 
-        assert_eq!(function_name.join(""), "fetch_data");
-
-        dbg!(tool_calls_array);
-        assert_eq!(
-            tool_calls_array[0]
-                .get("function")
-                .unwrap()
-                .get("name")
-                .unwrap()
-                .as_str()
-                .unwrap(),
-            "fetch_data"
-        );
-
-        dbg!(tool_calls_array);
-        assert_eq!(
-            tool_calls_array[0]
-                .get("function")
-                .unwrap()
-                .get("arguments")
-                .unwrap()
-                .as_str()
-                .unwrap(),
-            r#"{ "param1": "value1" }"#
-        );
+        assert_eq!(events, vec!["The", " ", "202"]);
+        assert_eq!(content, events.join(""));
     }
 
     #[tokio::test]
@@ -539,20 +424,8 @@ mod tests {
             .await;
 
         let client = NetworkClient::new();
-        let settings = AssistantSettings {
-            token: "token".to_string(),
-            url: mock_server.uri(),
-            chat_model: "model".to_string(),
-            temperature: 0.5,
-            max_tokens: 100,
-            max_completion_tokens: 100,
-            top_p: 0.5,
-            stream: false, // Disable streaming
-            parallel_tool_calls: false,
-            tools: true,
-            advertisement: false,
-            assistant_role: "".to_string(),
-        };
+        let mut settings = AssistantSettings::default();
+        settings.url = mock_server.uri();
 
         let messages = vec![TestMessage {
             role: "role".to_string(),

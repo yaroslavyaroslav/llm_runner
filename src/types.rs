@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use serde_json::{Map, Value};
+
+use crate::network_client::OpenAIErrors;
 
 #[derive(Debug, Clone)]
 pub struct AssistantSettings {
@@ -226,7 +228,13 @@ pub struct AudioContent {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Function {
     pub name: String,
-    pub arguments: HashMap<String, serde_json::Value>,
+    pub arguments: String,
+}
+
+impl Function {
+    pub fn get_arguments_map(&self) -> Result<Map<String, Value>, serde_json::Error> {
+        serde_json::from_str(self.arguments.as_str())
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -542,10 +550,7 @@ mod tests {
                 r#type: "function_call".to_string(),
                 function: Function {
                     name: "example_function".to_string(),
-                    arguments: HashMap::from([
-                        ("arg1".to_string(), serde_json::json!("value1")),
-                        ("arg2".to_string(), serde_json::json!("value2")),
-                    ]),
+                    arguments: "{\"file_path\":\"/home/user/debug.txt\"}".to_string(),
                 },
             }]),
         };
@@ -563,10 +568,7 @@ mod tests {
                     "type": "function_call",
                     "function": {
                         "name": "example_function",
-                        "arguments": {
-                            "arg1": "value1",
-                            "arg2": "value2"
-                        }
+                        "arguments": "{\"file_path\":\"/home/user/debug.txt\"}"
                     }
                 }
             ]
@@ -749,5 +751,40 @@ mod tests {
 
         assert!(messages[0].downcast_ref::<AssistantMessage>().is_some());
         assert!(messages[1].downcast_ref::<OpenAIMessage>().is_some());
+    }
+
+    #[test]
+    fn test_deserialize_tool_calls() {
+        let json_data = r#"
+        {
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "index": 0,
+                "id": "call_etemzkk7d3atzyzsj3823b96",
+                "type": "function",
+                "function": {
+                  "arguments": "{\"file_path\":\"/home/user/debug.txt\"}",
+                  "name": "create_file"
+                }
+              }
+            ]
+        }"#;
+
+        let message: AssistantMessage = serde_json::from_str(json_data).unwrap();
+
+        assert_eq!(message.role, Roles::Assistant);
+        assert!(message.content.is_none());
+        let tool_calls = message.tool_calls.unwrap();
+        assert_eq!(tool_calls.len(), 1);
+        let tool_call = &tool_calls[0];
+        assert_eq!(tool_call.index, 0);
+        assert_eq!(tool_call.id, "call_etemzkk7d3atzyzsj3823b96");
+        assert_eq!(tool_call.r#type, "function");
+        let function = &tool_call.function;
+        assert_eq!(function.name, "create_file");
+        let args: serde_json::Map<String, Value> =
+            serde_json::from_str("{\"file_path\":\"/home/user/debug.txt\"}").unwrap();
+        assert_eq!(function.get_arguments_map().unwrap(), args);
     }
 }

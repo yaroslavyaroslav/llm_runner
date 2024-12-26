@@ -135,7 +135,7 @@ impl NetworkClient {
                                     .and_then(|c| c.as_array())
                                     .and_then(|arr| arr.first())
                                     .and_then(|first| first.as_object())
-                                    .ok_or_else(|| "Failed to parse JSON")?,
+                                    .ok_or("Failed to parse JSON")?,
                             ) {
                                 if sender.send(content).await.is_err() {
                                     eprintln!("Failed to send SSE data");
@@ -183,26 +183,13 @@ fn merge_json(base: &mut Value, addition: &Value) {
                         }
                     }
                     "tool_calls" => {
-                        if let (Some(Value::Array(base_array)), Value::Array(addition_array)) =
-                            (base_map.get_mut(key), value)
-                        {
-                            for (base_item, addition_item) in
-                                base_array.iter_mut().zip(addition_array.iter())
-                            {
-                                if let (
-                                    Some(Value::String(base_args)),
-                                    Some(Value::String(addition_args)),
-                                ) = (
-                                    base_item
-                                        .get_mut("function")
-                                        .and_then(|f| f.get_mut("arguments")),
-                                    addition_item
-                                        .get("function")
-                                        .and_then(|f| f.get("arguments")),
-                                ) {
-                                    base_args.push_str(addition_args);
-                                }
-                            }
+                        if let (Some(base_array), Some(addition_array)) = (
+                            base_map.get_mut(key).and_then(|v| v.as_array_mut()),
+                            value.as_array(),
+                        ) {
+                            merge_tool_calls(base_array, addition_array.to_vec());
+                        } else {
+                            base_map.insert(key.to_string(), value.clone());
                         }
                     }
                     _ => merge_json(base_map.entry(key).or_insert(Value::Null), value),
@@ -214,6 +201,33 @@ fn merge_json(base: &mut Value, addition: &Value) {
         }
         (base, addition) => {
             *base = addition.clone();
+        }
+    }
+}
+
+fn merge_tool_calls(base_array: &mut [Value], addition_array: Vec<Value>) {
+    for (base_item, addition_item) in base_array.iter_mut().zip(addition_array) {
+        merge_tool_call(base_item, &addition_item);
+    }
+}
+
+fn merge_tool_call(base_item: &mut Value, addition_item: &Value) {
+    if let (Some(base_args), Some(addition_args)) = (
+        base_item
+            .get_mut("function")
+            .and_then(|f| f.get_mut("arguments")),
+        addition_item
+            .get("function")
+            .and_then(|f| f.get("arguments")),
+    ) {
+        if let Some(base_args_str) = base_args.as_str() {
+            if let Some(addition_args_str) = addition_args.as_str() {
+                *base_args = serde_json::json!(format!("{}{}", base_args_str, addition_args_str));
+            } else {
+                *base_args = addition_args.clone();
+            }
+        } else {
+            *base_args = addition_args.clone();
         }
     }
 }
@@ -389,6 +403,101 @@ mod tests {
 
         assert_eq!(events, vec!["The", " ", "202"]);
         assert_eq!(content, events.join(""));
+    }
+
+    #[tokio::test]
+    async fn test_sse_tool_calls_streaming() {
+        let mock_server = MockServer::start().await;
+
+        // SSE content for testing tool_calls
+        let sse_data = r#"
+        data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"role":"assistant","content":null},"logprobs":null,"finish_reason":null}]}
+
+        data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_hozqwzmegi9la14u8wmizj35","type":"function","function":{"name":"create_file","arguments":""}}]},"logprobs":null,"finish_reason":null}]}
+
+        data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\""}}]},"logprobs":null,"finish_reason":null}]}
+
+        data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"file\""}}]},"logprobs":null,"finish_reason":null}]}
+
+        data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":": "}}]},"logprobs":null,"finish_reason":null}]}
+
+        data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"some\"}"}}]},"logprobs":null,"finish_reason":null}]}
+        "#;
+
+        let _mock = wiremock::Mock::given(method("POST"))
+            .and(header(CONTENT_TYPE.as_str(), "content/json"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header(CONTENT_TYPE.as_str(), "text/event-stream; charset=utf-8")
+                    .set_body_raw(sse_data.as_bytes(), "text/event-stream; charset=utf-8")
+                    .set_body_string(sse_data),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = NetworkClient::new();
+        let mut settings = AssistantSettings::default();
+        settings.url = mock_server.uri();
+
+        let messages = vec![TestMessage {
+            role: "role".to_string(),
+            content: "content".to_string(),
+        }];
+
+        let payload = client.prepare_payload(settings.clone(), messages).unwrap();
+        let request = client.prepare_request(settings, payload).unwrap();
+
+        let (tx, mut rx) = mpsc::channel(10);
+
+        let result = client
+            .execute_response::<Map<String, Value>>(request, Some(tx))
+            .await;
+
+        let mut function_name = vec![];
+        while let Some(data) = rx.recv().await {
+            function_name.push(data);
+        }
+
+        let binding = result.unwrap();
+        let tool_calls_array = dbg!(&binding)
+            .get("choices")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .get(0)
+            .unwrap()
+            .get("delta")
+            .unwrap()
+            .get("tool_calls")
+            .unwrap()
+            .as_array()
+            .unwrap();
+
+        assert_eq!(function_name.join(""), "create_file");
+
+        dbg!(tool_calls_array);
+        assert_eq!(
+            tool_calls_array[0]
+                .get("function")
+                .unwrap()
+                .get("name")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "create_file"
+        );
+
+        dbg!(tool_calls_array);
+        assert_eq!(
+            tool_calls_array[0]
+                .get("function")
+                .unwrap()
+                .get("arguments")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "{\"file\": \"some\"}"
+        );
     }
 
     #[tokio::test]

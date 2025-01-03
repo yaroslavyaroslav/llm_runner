@@ -15,8 +15,8 @@ pub struct Cacher {
 
 #[allow(unused)]
 impl Cacher {
-    pub fn new(subl_cach_path: &str, name: Option<&str>) -> Self {
-        let cache_dir = subl_cach_path.to_string();
+    pub fn new(subl_cache_path: &str, name: Option<&str>) -> Self {
+        let cache_dir = subl_cache_path.to_string();
 
         use std::path::{Path, PathBuf};
 
@@ -77,11 +77,11 @@ impl Cacher {
         let reader = std::io::BufReader::new(file);
         let mut entries = Vec::new();
 
-        for line in reader.lines() {
+        for (num, line) in reader.lines().enumerate() {
             let line = line.map_err(SerdeError::custom)?;
             match serde_json::from_str::<T>(&line) {
                 Ok(obj) => entries.push(obj),
-                Err(err) => eprintln!("Malformed line skipped: {} (Error: {})", line, err),
+                Err(err) => eprintln!("Malformed line skipped: {} (Error: {})", num, err),
             }
         }
         Ok(entries)

@@ -21,7 +21,7 @@ pub(crate) struct CacheEntry {
     pub(crate) tool_call_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[allow(unused)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum InputKind {
@@ -32,7 +32,7 @@ pub(crate) enum InputKind {
     Terminus,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[allow(unused)]
 pub(crate) struct SublimeInputContent {
     pub(crate) content: Option<String>,

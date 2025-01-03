@@ -6,12 +6,14 @@ use std::io::{BufRead, Write};
 use std::path::Path;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Cacher {
     pub current_model_file: String,
     pub history_file: String,
     pub tokens_count_file: String,
 }
 
+#[allow(unused)]
 impl Cacher {
     pub fn new(subl_cach_path: &str, name: Option<&str>) -> Self {
         let cache_dir = subl_cach_path.to_string();

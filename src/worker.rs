@@ -1,103 +1,101 @@
-use std::collections::HashMap;
+use serde_json::from_str;
 use std::error::Error;
-use std::sync::mpsc;
-use std::thread;
-
-use serde::Serialize;
+// use tokio::task;
 
 use crate::cacher::Cacher;
 use crate::network_client::NetworkClient;
-use crate::types::AssistantSettings;
+use crate::types::{AssistantSettings, PromptMode, SublimeInputContent};
 
-struct OpenAIWorker {
-    view_id: usize,
-    mode: String,
-    command: Option<String>,
-    assistant: AssistantSettings,
-    sheets: Option<Vec<String>>,
-    cacher: Cacher,
-    provider: NetworkClient,
+#[allow(unused, dead_code)]
+pub struct OpenAIWorker {
+    // TODO: Think on is their necessary to be accessiable through whole object life?
+    view_id: Option<usize>,
+    window_id: usize,
+    prompt_mode: Option<PromptMode>,
+    contents: Vec<SublimeInputContent>,
+    assistant_settings: Option<AssistantSettings>,
+    cacher: Option<Cacher>,
+    provider: Option<NetworkClient>,
 }
 
-// impl OpenAIWorker {
-//     fn new(
-//         region: Option<String>,
-//         selected_text: String,
-//         view: String,
-//         mode: String,
-//         command: Option<String>,
-//         assistant: AssistantSettings,
-//         sheets: Option<Vec<String>>,
-//     ) -> Self {
-//         let cacher = Cacher::new();
-//         let provider = NetworkClient::new(assistant.clone());
-//         let listner = OutputPanelListener::new(true);
-//         let phantom_manager = PhantomStreamer::new(view.clone(), cacher.clone());
+impl OpenAIWorker {
+    pub fn new(window_id: usize) -> Self {
+        Self {
+            window_id,
+            view_id: None,
+            prompt_mode: None,
+            contents: vec![],
+            assistant_settings: None,
+            cacher: None,
+            provider: None,
+        }
+    }
 
-//         Self {
-//             region,
-//             selected_text,
-//             view,
-//             mode,
-//             command,
-//             assistant,
-//             sheets,
-//             cacher,
-//             provider,
-//             listner,
-//             phantom_manager,
-//         }
-//     }
+    //     fn handle_function_call(&self, _tool_calls: Vec<String>) -> Result<(), Box<dyn Error>> {
+    //         // Simulate handling the function call
+    //         Ok(())
+    //     }
 
-//     fn handle_function_call(&self, _tool_calls: Vec<String>) -> Result<(), Box<dyn Error>> {
-//         // Simulate handling the function call
-//         Ok(())
-//     }
+    //     fn handle_streaming_response(&self, _response: String) -> Result<(), Box<dyn Error>> {
+    //         // Simulate handling the streaming response
+    //         Ok(())
+    //     }
 
-//     fn handle_streaming_response(&self, _response: String) -> Result<(), Box<dyn Error>> {
-//         // Simulate handling the streaming response
-//         Ok(())
-//     }
+    //     fn handle_plain_response(&self, _response: String) -> Result<(), Box<dyn Error>> {
+    //         // Simulate handling the plain response
+    //         Ok(())
+    //     }
 
-//     fn handle_plain_response(&self, _response: String) -> Result<(), Box<dyn Error>> {
-//         // Simulate handling the plain response
-//         Ok(())
-//     }
+    //     fn handle_response(&self) -> Result<(), Box<dyn Error>> {
+    //         // Simulate handling the response
+    //         Ok(())
+    //     }
 
-//     fn handle_response(&self) -> Result<(), Box<dyn Error>> {
-//         // Simulate handling the response
-//         Ok(())
-//     }
+    pub async fn run(
+        &self,
+        view_id: usize,
+        contents: String, // encoded `Vec<SublimeInputContent>`
+        prompt_mode: PromptMode,
+        assistant_settings: AssistantSettings,
+    ) -> Result<(), Box<dyn Error>> {
+        // Initialize NetworkClient
+        let network_client = NetworkClient::new();
 
-//     fn run(&self) -> Result<(), Box<dyn Error>> {
-//         // Simulate running the worker
-//         Ok(())
-//     }
-// }
+        // // Set view_id and prompt_mode
+        // let view_id = Some(view_id);
+        // let prompt_mode = Some(prompt_mode);
 
-// fn main() -> Result<(), Box<dyn Error>> {
-//     let (tx, rx) = mpsc::channel();
+        // // Deserializing the contents
+        // let decoded_contents: Vec<SublimeInputContent> =
+        //     from_str(&contents).map_err(|e| format!("Failed to decode contents: {}", e))?;
 
-//     let worker = OpenAIWorker::new(
-//         None,
-//         "Selected text".to_string(),
-//         "View".to_string(),
-//         "Mode".to_string(),
-//         Some("Command".to_string()),
-//         AssistantSettings {
-//             max_tokens: 100,
-//             stream: true,
-//             prompt_mode: "panel".to_string(),
-//             assistant_role: "Assistant role".to_string(),
-//         },
-//         None,
-//     );
+        // // Check and read cache
+        // if let Some(cacher) = &self.cacher {
+        //     let mut cache_entries: Vec<SublimeInputContent> = cacher.read_entries()?;
+        //     cache_entries.extend(decoded_contents.clone());
+        //     for entry in &decoded_contents {
+        //         cacher.write_entry(entry).await;
+        //     }
+        // }
 
-//     let handle = thread::spawn(move || {
-//         worker.run().unwrap();
-//     });
+        // // Prepare payload and request
+        // let payload = network_client
+        //     .prepare_payload(assistant_settings.clone(), decoded_contents)
+        //     .map_err(|e| format!("Failed to prepare payload: {}", e))?;
 
-//     handle.join().unwrap();
+        // let request = network_client
+        //     .prepare_request(assistant_settings.clone(), payload)
+        //     .map_err(|e| format!("Failed to prepare request: {}", e))?;
 
-//     Ok(())
-// }
+        // // Execute network request
+        // match network_client
+        //     .execute_response::<serde_json::Value>(request, None)
+        //     .await
+        // {
+        //     Ok(response) => println!("Response: {:?}", response),
+        //     Err(e) => return Err(format!("Failed to execute network request: {}", e).into()),
+        // };
+
+        Ok(())
+    }
+}

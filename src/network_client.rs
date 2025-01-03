@@ -8,9 +8,11 @@ use reqwest::{Client, Request};
 use serde::de::DeserializeOwned;
 use tokio::sync::mpsc;
 
-use crate::types::AssistantSettings;
+use crate::openai_network_types::OpenAICompletionRequest;
+use crate::types::{AssistantSettings, CacheEntry, SublimeInputContent};
 
 #[derive(Debug)]
+#[allow(unused, dead_code, private_interfaces)]
 pub enum OpenAIErrors {
     ContextLengthExceededException,
     UnknownException,
@@ -18,6 +20,8 @@ pub enum OpenAIErrors {
     InvalidHeaderError(String),
     JsonError(serde_json::Error),
 }
+
+#[allow(unused, dead_code, private_interfaces)]
 pub struct NetworkClient {
     client: Client,
     headers: HeaderMap,
@@ -39,6 +43,7 @@ impl std::fmt::Display for OpenAIErrors {
     }
 }
 
+#[allow(unused, dead_code, private_interfaces)]
 impl NetworkClient {
     pub(crate) fn new() -> Self {
         let mut headers = HeaderMap::new();
@@ -49,34 +54,17 @@ impl NetworkClient {
         Self { client, headers }
     }
 
-    pub(crate) fn prepare_payload<T>(
+    pub(crate) fn prepare_payload(
         &self,
         settings: AssistantSettings,
-        messages: Vec<T>,
-    ) -> Result<String, OpenAIErrors>
-    where
-        T: Serialize,
-    {
-        let internal_messages: Vec<serde_json::Value> = if settings.assistant_role.is_none() {
-            messages
-                .into_iter()
-                .map(|m| serde_json::to_value(m))
-                .collect::<Result<Vec<serde_json::Value>, _>>()
-                .map_err(OpenAIErrors::JsonError)?
-        } else {
-            let mut internal_messages = vec![serde_json::json!({
-                "role": "system",
-                "content": settings.assistant_role,
-            })];
-            internal_messages.extend(
-                messages
-                    .into_iter()
-                    .map(|m| serde_json::to_value(m))
-                    .collect::<Result<Vec<serde_json::Value>, _>>()
-                    .map_err(OpenAIErrors::JsonError)?,
-            );
-            internal_messages
-        };
+        cache_entries: Vec<CacheEntry>,
+        sublime_inputs: Vec<SublimeInputContent>,
+    ) -> Result<String, OpenAIErrors> {
+        let internal_messages = OpenAICompletionRequest::create_openai_completion_request(
+            settings,
+            cache_entries,
+            sublime_inputs,
+        );
 
         serde_json::to_string(&internal_messages).map_err(OpenAIErrors::JsonError)
     }
@@ -267,6 +255,8 @@ fn obtain_delta(map: &Map<String, Value>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::types::InputKind;
+
     use super::*;
     use serde::Deserialize;
     use tokio::test;
@@ -290,22 +280,36 @@ mod tests {
         let client = NetworkClient::new();
         let settings = AssistantSettings::default();
 
-        let messages = vec![TestMessage {
-            role: "role".to_string(),
-            content: "content".to_string(),
+        let cache_entries = vec![]; // Pass an empty vector for cache entries
+        let sublime_inputs = vec![SublimeInputContent {
+            content: Some("content".to_string()),
+            path: None,
+            scope: None,
+            input_kind: InputKind::ViewSelection,
         }];
 
-        let payload = client.prepare_payload(settings, messages).unwrap();
+        let payload = client
+            .prepare_payload(settings, cache_entries, sublime_inputs)
+            .unwrap();
 
-        let expected_payload = serde_json::json!([
-            {
-                "role": "role",
-                "content": "content",
-            },
-        ])
-        .to_string();
+        let payload_json: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        let expected_payload = serde_json::json!({
+            "messages": [
+                {
+                    "content": [
+                        {
+                            "text": "content",
+                            "type": "text",
+                        }
+                    ],
+                    "role": "user",
+                }
+            ],
+            "stream": true,
+            "model": "gpt-4o",
+        });
 
-        assert_eq!(payload, expected_payload);
+        assert_eq!(payload_json, expected_payload);
     }
 
     #[tokio::test]
@@ -324,12 +328,17 @@ mod tests {
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
 
-        let messages = vec![TestMessage {
-            role: "role".to_string(),
-            content: "content".to_string(),
+        let cache_entries = vec![]; // Placeholder for cache entries
+        let sublime_inputs = vec![SublimeInputContent {
+            content: Some("content".to_string()),
+            path: None,
+            scope: None,
+            input_kind: InputKind::ViewSelection,
         }];
 
-        let payload = client.prepare_payload(settings.clone(), messages).unwrap();
+        let payload = client
+            .prepare_payload(settings.clone(), cache_entries, sublime_inputs)
+            .unwrap();
 
         let request = client.prepare_request(settings, payload).unwrap();
 
@@ -366,12 +375,18 @@ mod tests {
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
 
-        let messages = vec![TestMessage {
-            role: "role".to_string(),
-            content: "content".to_string(),
+        let cache_entries = vec![]; // Pass an empty vector for cache entries
+        let sublime_inputs = vec![SublimeInputContent {
+            content: Some("content".to_string()),
+            path: None,
+            scope: None,
+            input_kind: InputKind::ViewSelection,
         }];
 
-        let payload = client.prepare_payload(settings.clone(), messages).unwrap();
+        let payload = client
+            .prepare_payload(settings.clone(), cache_entries, sublime_inputs)
+            .unwrap();
+
         let request = client.prepare_request(settings, payload).unwrap();
 
         let (tx, mut rx) = mpsc::channel(10);
@@ -439,13 +454,10 @@ mod tests {
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
 
-        let messages = vec![TestMessage {
-            role: "role".to_string(),
-            content: "content".to_string(),
-        }];
-
-        let payload = client.prepare_payload(settings.clone(), messages).unwrap();
-        let request = client.prepare_request(settings, payload).unwrap();
+        let payload = "dummy payload";
+        let request = client
+            .prepare_request(settings, payload.to_string())
+            .unwrap();
 
         let (tx, mut rx) = mpsc::channel(10);
 
@@ -536,13 +548,10 @@ mod tests {
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
 
-        let messages = vec![TestMessage {
-            role: "role".to_string(),
-            content: "content".to_string(),
-        }];
-
-        let payload = client.prepare_payload(settings.clone(), messages).unwrap();
-        let request = client.prepare_request(settings, payload).unwrap();
+        let payload = "dummy payload";
+        let request = client
+            .prepare_request(settings, payload.to_string())
+            .unwrap();
 
         let result: Map<String, Value> = client
             .execute_response::<Map<String, Value>>(request, None)

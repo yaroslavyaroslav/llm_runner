@@ -1,7 +1,9 @@
-pub mod cacher;
-pub mod network_client;
+mod cacher;
+mod network_client;
+mod openai_network_types;
+mod types;
+
 pub mod sublime_python;
-pub mod types;
 pub mod worker;
 
 use pyo3::prelude::*;

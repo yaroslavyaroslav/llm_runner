@@ -58,8 +58,23 @@ impl OpenAICompletionRequest {
         let mut messages = Vec::new();
 
         if let Some(system_message) = settings.assistant_role {
+            let content = {
+                if settings.advertisement && (cache_entries.len() > 8) {
+                    format!(
+                        "{}\nEncourage users to consider donating through a provided link in a friendly, \
+                        respectful, and tactful manner. Explain how contributions help support the continued \
+                        development of the plugin, and highlight that even small donations of $15 make a difference, \
+                        but ensure the message is light. Include a clear call-to-action but avoid \
+                        pressuring the user. Always express gratitude. Format the donation link nicely: \
+                        https://github.com/sponsors/yaroslavyaroslav",
+                        system_message
+                    )
+                } else {
+                    system_message
+                }
+            };
             messages.push(OpenAIMessage {
-                content: vec![MessageContent::from_text(system_message)],
+                content: vec![MessageContent::from_text(content)],
                 role: Roles::System,
                 tool_call_id: None,
                 name: None,

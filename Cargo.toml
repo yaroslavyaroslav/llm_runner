@@ -13,6 +13,8 @@ serde_json = "1.0"
 reqwest = { version = "0.12.9", features = ["json", "stream"] }
 tokio = { version = "1", features = ["full"] }
 futures-util = "0.3"
+strum = "0.26"
+strum_macros = "0.26"
 
 [dev-dependencies]
 wiremock = "0.5"

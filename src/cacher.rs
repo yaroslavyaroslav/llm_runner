@@ -55,6 +55,8 @@ impl Cacher {
             )
         };
 
+        dbg!(&history_file);
+
         Self {
             current_model_file,
             history_file,
@@ -73,7 +75,12 @@ impl Cacher {
         T: for<'de> Deserialize<'de>,
     {
         self.check_and_create(&self.history_file);
-        let file = File::open(&self.history_file).unwrap();
+
+        let file = match File::open(&self.history_file) {
+            Ok(file) => file,
+            Err(_) => return Ok(Vec::new()),
+        };
+
         let reader = std::io::BufReader::new(file);
         let mut entries = Vec::new();
 
@@ -84,6 +91,7 @@ impl Cacher {
                 Err(err) => eprintln!("Malformed line skipped: {} (Error: {})", num, err),
             }
         }
+
         Ok(entries)
     }
 

@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-// use crate::network_client::OpenAIErrors;
 use crate::openai_network_types::{Roles, ToolCall};
 
 #[allow(unused)]
+#[derive(Clone, Copy)]
 pub enum PromptMode {
     View,
     Phantom,
@@ -13,22 +13,45 @@ pub enum PromptMode {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct CacheEntry {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) content: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) path: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) scope: Option<String>,
+
     pub(crate) role: Roles,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) tool_call: Option<ToolCall>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) tool_call_id: Option<String>,
+}
+
+impl From<SublimeInputContent> for CacheEntry {
+    fn from(content: SublimeInputContent) -> Self {
+        CacheEntry {
+            content: content.content,
+            path: content.path,
+            scope: content.scope,
+            role: Roles::User,
+            tool_call: None,
+            tool_call_id: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[allow(unused)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum InputKind {
     ViewSelection,
     Command,
     BuildOutputPanel,
-    LSPOutputPanel,
+    LspOutputPanel,
     Terminus,
 }
 
@@ -41,7 +64,7 @@ pub(crate) struct SublimeInputContent {
     pub(crate) input_kind: InputKind,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AssistantSettings {
     pub name: String,
     pub output_mode: OutputMode,
@@ -84,7 +107,7 @@ impl Default for AssistantSettings {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 #[allow(unused)]
 pub enum OutputMode {
     Panel,

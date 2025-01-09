@@ -1,10 +1,9 @@
 use futures_util::StreamExt;
-use serde::Serialize;
 use serde_json::{Map, Value};
 use std::error::Error;
 
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
-use reqwest::{Client, Request};
+use reqwest::{Client, Proxy, Request};
 use serde::de::DeserializeOwned;
 use tokio::sync::mpsc;
 
@@ -22,6 +21,7 @@ pub enum OpenAIErrors {
 }
 
 #[allow(unused, dead_code, private_interfaces)]
+#[derive(Clone)]
 pub struct NetworkClient {
     client: Client,
     headers: HeaderMap,
@@ -45,11 +45,17 @@ impl std::fmt::Display for OpenAIErrors {
 
 #[allow(unused, dead_code, private_interfaces)]
 impl NetworkClient {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(proxy: Option<String>) -> Self {
         let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("content/json"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
-        let client = Client::new();
+        let client = if let Some(proxy_line) = proxy {
+            let proxy = Proxy::https(proxy_line).unwrap();
+
+            Client::builder().proxy(proxy).build().unwrap()
+        } else {
+            Client::new()
+        };
 
         Self { client, headers }
     }
@@ -90,7 +96,7 @@ impl NetworkClient {
             .map_err(OpenAIErrors::ReqwestError)
     }
 
-    pub async fn execute_response<T>(
+    pub async fn execute_request<T>(
         &self,
         request: Request,
         sender: Option<mpsc::Sender<String>>,
@@ -112,6 +118,11 @@ impl NetworkClient {
                     let data = String::from_utf8_lossy(&chunk);
 
                     for line in data.lines() {
+                        if line.trim() == "data: [DONE]" {
+                            sender.closed();
+                            break;
+                        }
+
                         if let Some(stripped) = line.trim_start().strip_prefix("data: ") {
                             let json_value: serde_json::Value = serde_json::from_str(stripped)?;
 
@@ -125,9 +136,12 @@ impl NetworkClient {
                                     .and_then(|first| first.as_object())
                                     .ok_or("Failed to parse JSON")?,
                             ) {
-                                if sender.send(content).await.is_err() {
-                                    eprintln!("Failed to send SSE data");
-                                }
+                                let cloned_sender = sender.clone();
+                                let sync_code = tokio::spawn(async move {
+                                    if cloned_sender.send(content).await.is_err() {
+                                        eprintln!("Failed to send SSE data");
+                                    }
+                                });
                             }
                         }
                     }
@@ -258,7 +272,7 @@ mod tests {
     use crate::types::InputKind;
 
     use super::*;
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
     use tokio::test;
     use wiremock::matchers::{header, method};
     use wiremock::{MockServer, ResponseTemplate};
@@ -277,7 +291,7 @@ mod tests {
 
     #[test]
     async fn test_prepare_payload() {
-        let client = NetworkClient::new();
+        let client = NetworkClient::new(None);
         let settings = AssistantSettings::default();
 
         let cache_entries = vec![]; // Pass an empty vector for cache entries
@@ -316,7 +330,7 @@ mod tests {
     async fn test_execute_response() {
         let mock_server = MockServer::start().await;
         let _mock = wiremock::Mock::given(method("POST"))
-            .and(header(CONTENT_TYPE.as_str(), "content/json"))
+            .and(header(CONTENT_TYPE.as_str(), "application/json"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_string("{\"id\": \"1\", \"object\": \"object\"}"),
@@ -324,7 +338,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = NetworkClient::new();
+        let client = NetworkClient::new(None);
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
 
@@ -342,7 +356,7 @@ mod tests {
 
         let request = client.prepare_request(settings, payload).unwrap();
 
-        let response: Result<TestResponse, _> = client.execute_response(request, None).await;
+        let response: Result<TestResponse, _> = client.execute_request(request, None).await;
 
         assert_eq!(response.as_ref().unwrap().id, "1".to_string());
         assert_eq!(response.unwrap().object, "object".to_string());
@@ -354,24 +368,27 @@ mod tests {
 
         // SSE content for testing
         let sse_data = r#"
-            data: {"choices":[{"delta":{"content":"The","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
+        data: {"choices":[{"delta":{"content":"The","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
 
-            data: {"choices":[{"delta":{"content":" ","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
+        data: {"choices":[{"delta":{"content":" ","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
 
-            data: {"choices":[{"delta":{"content":"202","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
+        data: {"choices":[{"delta":{"content":"202","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
+
+        data: [DONE]
+
+
         "#;
         let _mock = wiremock::Mock::given(method("POST"))
-            .and(header(CONTENT_TYPE.as_str(), "content/json"))
+            .and(header(CONTENT_TYPE.as_str(), "application/json"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .insert_header(CONTENT_TYPE.as_str(), "text/event-stream; charset=utf-8")
-                    .set_body_raw(sse_data.as_bytes(), "text/event-stream; charset=utf-8")
                     .set_body_string(sse_data),
             )
             .mount(&mock_server)
             .await;
 
-        let client = NetworkClient::new();
+        let client = NetworkClient::new(None);
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
 
@@ -392,7 +409,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(10);
 
         let result = client
-            .execute_response::<Map<String, Value>>(request, Some(tx))
+            .execute_request::<Map<String, Value>>(request, Some(tx))
             .await;
 
         let mut events = vec![];
@@ -437,20 +454,21 @@ mod tests {
         data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":": "}}]},"logprobs":null,"finish_reason":null}]}
 
         data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"some\"}"}}]},"logprobs":null,"finish_reason":null}]}
+
+        data: [DONE]
         "#;
 
         let _mock = wiremock::Mock::given(method("POST"))
-            .and(header(CONTENT_TYPE.as_str(), "content/json"))
+            .and(header(CONTENT_TYPE.as_str(), "application/json"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .insert_header(CONTENT_TYPE.as_str(), "text/event-stream; charset=utf-8")
-                    .set_body_raw(sse_data.as_bytes(), "text/event-stream; charset=utf-8")
                     .set_body_string(sse_data),
             )
             .mount(&mock_server)
             .await;
 
-        let client = NetworkClient::new();
+        let client = NetworkClient::new(None);
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
 
@@ -462,7 +480,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(10);
 
         let result = client
-            .execute_response::<Map<String, Value>>(request, Some(tx))
+            .execute_request::<Map<String, Value>>(request, Some(tx))
             .await;
 
         let mut function_name = vec![];
@@ -535,7 +553,7 @@ mod tests {
         "#;
 
         let _mock = wiremock::Mock::given(method("POST"))
-            .and(header(CONTENT_TYPE.as_str(), "content/json"))
+            .and(header(CONTENT_TYPE.as_str(), "application/json"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .insert_header(CONTENT_TYPE.as_str(), "application/json")
@@ -544,7 +562,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = NetworkClient::new();
+        let client = NetworkClient::new(None);
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
 
@@ -554,7 +572,7 @@ mod tests {
             .unwrap();
 
         let result: Map<String, Value> = client
-            .execute_response::<Map<String, Value>>(request, None)
+            .execute_request::<Map<String, Value>>(request, None)
             .await
             .unwrap();
 

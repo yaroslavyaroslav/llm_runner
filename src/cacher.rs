@@ -57,11 +57,7 @@ impl Cacher {
 
         dbg!(&history_file);
 
-        Self {
-            current_model_file,
-            history_file,
-            tokens_count_file,
-        }
+        Self { current_model_file, history_file, tokens_count_file }
     }
 
     fn check_and_create(&self, path: &str) {
@@ -140,21 +136,19 @@ mod tests {
     #[test]
     fn test_write_and_read_entries() {
         let temp_dir = TempDir::new().unwrap();
-        let history_path = temp_dir.path().join("test_history.json");
+        let history_path = temp_dir
+            .path()
+            .join("test_history.json");
         let cacher = Cacher {
-            history_file: history_path.to_string_lossy().to_string(),
+            history_file: history_path
+                .to_string_lossy()
+                .to_string(),
             current_model_file: "".to_string(),
             tokens_count_file: "".to_string(),
         };
 
-        let entry1 = TestEntry {
-            id: 1,
-            name: "Alice".to_string(),
-        };
-        let entry2 = TestEntry {
-            id: 2,
-            name: "Bob".to_string(),
-        };
+        let entry1 = TestEntry { id: 1, name: "Alice".to_string() };
+        let entry2 = TestEntry { id: 2, name: "Bob".to_string() };
 
         cacher.write_entry(&entry1);
         cacher.write_entry(&entry2);
@@ -163,14 +157,8 @@ mod tests {
         let reader = BufReader::new(file);
         let lines: Vec<_> = reader.lines().collect();
         assert_eq!(lines.len(), 2);
-        assert_eq!(
-            lines[0].as_ref().unwrap(),
-            &serde_json::to_string(&entry1).unwrap()
-        );
-        assert_eq!(
-            lines[1].as_ref().unwrap(),
-            &serde_json::to_string(&entry2).unwrap()
-        );
+        assert_eq!(lines[0].as_ref().unwrap(), &serde_json::to_string(&entry1).unwrap());
+        assert_eq!(lines[1].as_ref().unwrap(), &serde_json::to_string(&entry2).unwrap());
 
         let read_entries: Vec<TestEntry> = cacher.read_entries().unwrap();
 
@@ -182,9 +170,13 @@ mod tests {
     #[test]
     fn test_read_empty_file() {
         let temp_dir = TempDir::new().unwrap();
-        let history_path = temp_dir.path().join("empty_history.json");
+        let history_path = temp_dir
+            .path()
+            .join("empty_history.json");
         let cacher = Cacher {
-            history_file: history_path.to_string_lossy().to_string(),
+            history_file: history_path
+                .to_string_lossy()
+                .to_string(),
             current_model_file: "".to_string(),
             tokens_count_file: "".to_string(),
         };
@@ -199,17 +191,18 @@ mod tests {
     #[test]
     fn test_partial_or_corrupted_entries() {
         let temp_dir = TempDir::new().unwrap();
-        let history_path = temp_dir.path().join("corrupted_history.json");
+        let history_path = temp_dir
+            .path()
+            .join("corrupted_history.json");
         let cacher = Cacher {
-            history_file: history_path.to_string_lossy().to_string(),
+            history_file: history_path
+                .to_string_lossy()
+                .to_string(),
             current_model_file: "".to_string(),
             tokens_count_file: "".to_string(),
         };
 
-        let entry1 = TestEntry {
-            id: 1,
-            name: "Alice".to_string(),
-        };
+        let entry1 = TestEntry { id: 1, name: "Alice".to_string() };
 
         let valid_line = serde_json::to_string(&entry1).unwrap();
         let corrupted_line = "{ id: 2, name: Bob }";

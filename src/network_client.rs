@@ -49,13 +49,15 @@ impl NetworkClient {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
-        let client = if let Some(proxy_line) = proxy {
-            let proxy = Proxy::https(proxy_line).unwrap();
-
-            Client::builder().proxy(proxy).build().unwrap()
-        } else {
-            Client::new()
-        };
+        let client = proxy
+            .and_then(|proxy_line| Proxy::all(proxy_line).ok())
+            .map(|proxy| {
+                Client::builder()
+                    .proxy(proxy)
+                    .build()
+                    .unwrap_or_default()
+            })
+            .unwrap_or_else(Client::new);
 
         Self { client, headers }
     }
@@ -66,11 +68,8 @@ impl NetworkClient {
         cache_entries: Vec<CacheEntry>,
         sublime_inputs: Vec<SublimeInputContent>,
     ) -> Result<String, OpenAIErrors> {
-        let internal_messages = OpenAICompletionRequest::create_openai_completion_request(
-            settings,
-            cache_entries,
-            sublime_inputs,
-        );
+        let internal_messages =
+            OpenAICompletionRequest::create_openai_completion_request(settings, cache_entries, sublime_inputs);
 
         serde_json::to_string(&internal_messages).map_err(OpenAIErrors::JsonError)
     }
@@ -83,8 +82,8 @@ impl NetworkClient {
         let url = settings.url.to_string();
         let mut headers = self.headers.clone();
         let auth_header = format!("Bearer {}", settings.token);
-        let auth_header = HeaderValue::from_str(&auth_header)
-            .map_err(|e| OpenAIErrors::InvalidHeaderError(e.to_string()))?;
+        let auth_header =
+            HeaderValue::from_str(&auth_header).map_err(|e| OpenAIErrors::InvalidHeaderError(e.to_string()))?;
 
         headers.insert(AUTHORIZATION, auth_header);
 
@@ -104,7 +103,10 @@ impl NetworkClient {
     where
         T: DeserializeOwned,
     {
-        let response = self.client.execute(request).await?;
+        let response = self
+            .client
+            .execute(request)
+            .await?;
 
         let mut composable_response = serde_json::json!({});
 
@@ -123,7 +125,10 @@ impl NetworkClient {
                             break;
                         }
 
-                        if let Some(stripped) = line.trim_start().strip_prefix("data: ") {
+                        if let Some(stripped) = line
+                            .trim_start()
+                            .strip_prefix("data: ")
+                        {
                             let json_value: serde_json::Value = serde_json::from_str(stripped)?;
 
                             merge_json(&mut composable_response, &json_value);
@@ -138,7 +143,11 @@ impl NetworkClient {
                             ) {
                                 let cloned_sender = sender.clone();
                                 let sync_code = tokio::spawn(async move {
-                                    if cloned_sender.send(content).await.is_err() {
+                                    if cloned_sender
+                                        .send(content)
+                                        .await
+                                        .is_err()
+                                    {
                                         eprintln!("Failed to send SSE data");
                                     }
                                 });
@@ -186,7 +195,9 @@ fn merge_json(base: &mut Value, addition: &Value) {
                     }
                     "tool_calls" => {
                         if let (Some(base_array), Some(addition_array)) = (
-                            base_map.get_mut(key).and_then(|v| v.as_array_mut()),
+                            base_map
+                                .get_mut(key)
+                                .and_then(|v| v.as_array_mut()),
                             value.as_array(),
                         ) {
                             merge_tool_calls(base_array, addition_array.to_vec());
@@ -194,7 +205,12 @@ fn merge_json(base: &mut Value, addition: &Value) {
                             base_map.insert(key.to_string(), value.clone());
                         }
                     }
-                    _ => merge_json(base_map.entry(key).or_insert(Value::Null), value),
+                    _ => merge_json(
+                        base_map
+                            .entry(key)
+                            .or_insert(Value::Null),
+                        value,
+                    ),
                 }
             }
         }
@@ -208,7 +224,10 @@ fn merge_json(base: &mut Value, addition: &Value) {
 }
 
 fn merge_tool_calls(base_array: &mut [Value], addition_array: Vec<Value>) {
-    for (base_item, addition_item) in base_array.iter_mut().zip(addition_array) {
+    for (base_item, addition_item) in base_array
+        .iter_mut()
+        .zip(addition_array)
+    {
         merge_tool_call(base_item, &addition_item);
     }
 }
@@ -242,7 +261,10 @@ fn merge_tool_call(base_item: &mut Value, addition_item: &Value) {
 /// only `"tool_calls"[0]."function"."name"` streams in the latter case here (it's a one shot).
 fn obtain_delta(map: &Map<String, Value>) -> Option<String> {
     if let Some(delta) = map.get("delta") {
-        if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
+        if let Some(content) = delta
+            .get("content")
+            .and_then(|c| c.as_str())
+        {
             return Some(content.to_string());
         }
         if let Some(function_name) = delta
@@ -252,7 +274,9 @@ fn obtain_delta(map: &Map<String, Value>) -> Option<String> {
             .and_then(|first_item| first_item.get("function"))
             .and_then(|function| function.get("name"))
         {
-            return function_name.as_str().map(|s| s.to_string());
+            return function_name
+                .as_str()
+                .map(|s| s.to_string());
         }
     }
 
@@ -331,10 +355,7 @@ mod tests {
         let mock_server = MockServer::start().await;
         let _mock = wiremock::Mock::given(method("POST"))
             .and(header(CONTENT_TYPE.as_str(), "application/json"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_string("{\"id\": \"1\", \"object\": \"object\"}"),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_string("{\"id\": \"1\", \"object\": \"object\"}"))
             .mount(&mock_server)
             .await;
 
@@ -354,9 +375,13 @@ mod tests {
             .prepare_payload(settings.clone(), cache_entries, sublime_inputs)
             .unwrap();
 
-        let request = client.prepare_request(settings, payload).unwrap();
+        let request = client
+            .prepare_request(settings, payload)
+            .unwrap();
 
-        let response: Result<TestResponse, _> = client.execute_request(request, None).await;
+        let response: Result<TestResponse, _> = client
+            .execute_request(request, None)
+            .await;
 
         assert_eq!(response.as_ref().unwrap().id, "1".to_string());
         assert_eq!(response.unwrap().object, "object".to_string());
@@ -404,7 +429,9 @@ mod tests {
             .prepare_payload(settings.clone(), cache_entries, sublime_inputs)
             .unwrap();
 
-        let request = client.prepare_request(settings, payload).unwrap();
+        let request = client
+            .prepare_request(settings, payload)
+            .unwrap();
 
         let (tx, mut rx) = mpsc::channel(10);
 

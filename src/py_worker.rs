@@ -26,18 +26,21 @@ pub struct PythonWorker {
 
     #[pyo3(get)]
     pub proxy: Option<String>,
+
+    cacher_path: String,
 }
 
 #[pymethods]
 impl PythonWorker {
     #[new]
-    #[pyo3(signature = (window_id, proxy=None))]
-    fn new(window_id: usize, proxy: Option<String>) -> Self {
+    #[pyo3(signature = (window_id, path, proxy=None))]
+    fn new(window_id: usize, path: String, proxy: Option<String>) -> Self {
         PythonWorker {
             window_id,
             view_id: None,
             prompt_mode: None,
             contents: None,
+            cacher_path: path,
             proxy,
         }
     }
@@ -52,11 +55,9 @@ impl PythonWorker {
     ) -> PyResult<()> {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
-            let mut worker = OpenAIWorker::new(
-                self.window_id,
-                Some("/tmp/".to_string()),
-                self.proxy.clone(),
-            );
+            #[rustfmt::skip]
+            let mut worker = OpenAIWorker::new(self.window_id, self.cacher_path.clone(), self.proxy.clone());
+
             worker
                 .run(
                     view_id,
@@ -101,7 +102,10 @@ impl From<PythonPromptMode> for PromptMode {
 impl PythonPromptMode {
     #[staticmethod]
     pub fn from_str(s: &str) -> Option<PythonPromptMode> {
-        match s.to_lowercase().as_str() {
+        match s
+            .to_lowercase()
+            .as_str()
+        {
             "view" => Some(PythonPromptMode::View),
             "phantom" => Some(PythonPromptMode::Phantom),
             _ => None, // Handle invalid input by returning None

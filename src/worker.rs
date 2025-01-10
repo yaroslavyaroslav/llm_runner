@@ -17,11 +17,11 @@ pub struct OpenAIWorker {
     pub(crate) contents: Vec<SublimeInputContent>,
     pub(crate) assistant_settings: Option<AssistantSettings>,
     pub(crate) proxy: Option<String>,
-    pub(crate) cacher: Cacher,
+    pub(crate) cacher_path: String,
 }
 
 impl OpenAIWorker {
-    pub fn new(window_id: usize, path: Option<String>, proxy: Option<String>) -> Self {
+    pub fn new(window_id: usize, path: String, proxy: Option<String>) -> Self {
         Self {
             window_id,
             view_id: None,
@@ -29,12 +29,7 @@ impl OpenAIWorker {
             contents: vec![],
             assistant_settings: None,
             proxy,
-            cacher: Cacher::new(
-                // FIXME: This is definitely temporary soludion and should rely on settings in future
-                path.unwrap_or("~/Library/Caches/Sublime Text/Cache/OpenAI completion".to_string())
-                    .as_str(),
-                Some("rust_test"),
-            ),
+            cacher_path: path,
         }
     }
 
@@ -49,6 +44,7 @@ impl OpenAIWorker {
         self.view_id = Some(view_id);
         self.prompt_mode = Some(prompt_mode);
         self.assistant_settings = Some(assistant_settings.clone());
+        let cacher = Cacher::new(&self.cacher_path, Some("name"));
         let provider = NetworkClient::new(self.proxy.clone());
 
         let (tx, rx) = if assistant_settings.stream {
@@ -59,11 +55,11 @@ impl OpenAIWorker {
         };
 
         // Decode the contents
-        self.contents = from_str::<Vec<SublimeInputContent>>(&contents)
-            .map_err(|e| format!("Failed to decode contents: {}", e))?;
+        self.contents =
+            from_str::<Vec<SublimeInputContent>>(&contents).map_err(|e| format!("Failed to decode contents: {}", e))?;
 
         // Read from cache and extend with new contents
-        let mut cache_entries: Vec<CacheEntry> = self.cacher.read_entries()?;
+        let mut cache_entries: Vec<CacheEntry> = cacher.read_entries()?;
         cache_entries.extend(
             self.contents
                 .iter()
@@ -78,15 +74,11 @@ impl OpenAIWorker {
                 .collect::<Vec<_>>(),
         );
         for entry in &self.contents {
-            self.cacher.write_entry(&CacheEntry::from(entry.clone()));
+            cacher.write_entry(&CacheEntry::from(entry.clone()));
         }
 
         let payload = provider
-            .prepare_payload(
-                assistant_settings.clone(),
-                cache_entries,
-                self.contents.clone(),
-            )
+            .prepare_payload(assistant_settings.clone(), cache_entries, self.contents.clone())
             .map_err(|e| format!("Failed to prepare payload: {}", e))?;
 
         let request = provider
@@ -108,7 +100,7 @@ impl OpenAIWorker {
                 println!("Response: {:?}", response);
                 Ok(())
             }
-            Err(e) => return Err(format!("Failed to execute network request: {}", e).into()),
+            Err(e) => Err(format!("Failed to execute network request: {}", e).into()),
         }
     }
 }

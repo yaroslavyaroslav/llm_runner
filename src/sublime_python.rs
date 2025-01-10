@@ -39,15 +39,3 @@ pub fn load_settings(py: Python, module: &str, string: &str) -> PyResult<Setting
 
     settings.extract()
 }
-
-// Mock sublime module for testing
-pub fn create_mock_sublime_module(py: Python) -> PyResult<Py<PyModule>> {
-    let module = PyModule::new(py, "sublime")?;
-    let settings_dict = PyDict::new(py);
-
-    // Add mock data to the settings dictionary
-    settings_dict.set_item("some_key", "some_value")?;
-
-    module.setattr("settings", settings_dict)?;
-    Ok(module.into())
-}

@@ -1,0 +1,29 @@
+# rustfmt.toml
+
+# Control where to break lines
+max_width = 120
+
+# Control indentation style
+hard_tabs = false
+tab_spaces = 4
+
+# Use or disable formatting
+format_strings = true
+
+# Control line endings
+use_small_heuristics = "Max"
+
+# Allow this method to go to a new line
+allow_single_line_if_else = true
+
+# # Control the wrapping of function parameters
+# fn_params = "Brace"
+
+# Prevent unnecessary `Ok` in results
+force_explicit_unsafe = true
+
+chain_split_single_line = true
+chain_width = 30
+
+fn_single_line = true
+struct_lit_single_line = true

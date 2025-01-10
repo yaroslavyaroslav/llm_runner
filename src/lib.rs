@@ -4,7 +4,7 @@ mod openai_network_types;
 pub mod types;
 
 mod py_worker;
-pub mod sublime_python;
+mod sublime_python;
 pub mod worker;
 
 use py_worker::{PythonPromptMode, PythonWorker};

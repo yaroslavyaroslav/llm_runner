@@ -10,6 +10,7 @@ pub mod worker;
 use py_worker::{PythonPromptMode, PythonWorker};
 use pyo3::prelude::*;
 use sublime_python::{load_settings, Settings};
+use types::{AssistantSettings, InputKind, OutputMode, SublimeInputContent};
 
 #[pymodule]
 fn rust_helper(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -18,6 +19,10 @@ fn rust_helper(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_class::<PythonPromptMode>()?;
     m.add_class::<PythonWorker>()?;
+    m.add_class::<AssistantSettings>()?;
+    m.add_class::<OutputMode>()?;
+    m.add_class::<SublimeInputContent>()?;
+    m.add_class::<InputKind>()?;
 
     Ok(())
 }

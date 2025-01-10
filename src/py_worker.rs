@@ -5,7 +5,7 @@ use strum_macros::{Display, EnumString};
 use tokio::runtime::Runtime;
 
 use crate::{
-    types::{AssistantSettings, PromptMode},
+    types::{AssistantSettings, PromptMode, SublimeInputContent},
     worker::OpenAIWorker,
 };
 
@@ -35,14 +35,7 @@ impl PythonWorker {
     #[new]
     #[pyo3(signature = (window_id, path, proxy=None))]
     fn new(window_id: usize, path: String, proxy: Option<String>) -> Self {
-        PythonWorker {
-            window_id,
-            view_id: None,
-            prompt_mode: None,
-            contents: None,
-            cacher_path: path,
-            proxy,
-        }
+        PythonWorker { window_id, view_id: None, prompt_mode: None, contents: None, cacher_path: path, proxy }
     }
 
     #[pyo3(signature = (view_id, prompt_mode, contents, assistant_settings))]
@@ -50,8 +43,8 @@ impl PythonWorker {
         &self,
         view_id: usize,
         prompt_mode: PythonPromptMode,
-        contents: String,
-        assistant_settings: String,
+        contents: Vec<SublimeInputContent>,
+        assistant_settings: AssistantSettings,
     ) -> PyResult<()> {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
@@ -59,12 +52,7 @@ impl PythonWorker {
             let mut worker = OpenAIWorker::new(self.window_id, self.cacher_path.clone(), self.proxy.clone());
 
             worker
-                .run(
-                    view_id,
-                    contents,
-                    PromptMode::from(prompt_mode),
-                    serde_json::from_str::<AssistantSettings>(assistant_settings.as_str()).unwrap(),
-                )
+                .run(view_id, contents, PromptMode::from(prompt_mode), assistant_settings)
                 .await
         })
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))
@@ -102,10 +90,7 @@ impl From<PythonPromptMode> for PromptMode {
 impl PythonPromptMode {
     #[staticmethod]
     pub fn from_str(s: &str) -> Option<PythonPromptMode> {
-        match s
-            .to_lowercase()
-            .as_str()
-        {
+        match s.to_lowercase().as_str() {
             "view" => Some(PythonPromptMode::View),
             "phantom" => Some(PythonPromptMode::Phantom),
             _ => None, // Handle invalid input by returning None

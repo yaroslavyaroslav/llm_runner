@@ -1,4 +1,3 @@
-use serde_json::from_str;
 use std::error::Error;
 use tokio::sync::mpsc;
 
@@ -36,7 +35,7 @@ impl OpenAIWorker {
     pub async fn run(
         &mut self,
         view_id: usize,
-        contents: String, // encoded `Vec<SublimeInputContent>`
+        contents: Vec<SublimeInputContent>,
         prompt_mode: PromptMode,
         assistant_settings: AssistantSettings,
     ) -> Result<(), Box<dyn Error>> {
@@ -54,9 +53,7 @@ impl OpenAIWorker {
             (None, None)
         };
 
-        // Decode the contents
-        self.contents =
-            from_str::<Vec<SublimeInputContent>>(&contents).map_err(|e| format!("Failed to decode contents: {}", e))?;
+        self.contents = contents;
 
         // Read from cache and extend with new contents
         let mut cache_entries: Vec<CacheEntry> = cacher.read_entries()?;

@@ -1,7 +1,7 @@
 # rustfmt.toml
 
 # Control where to break lines
-max_width = 120
+max_width = 110
 
 # Control indentation style
 hard_tabs = false

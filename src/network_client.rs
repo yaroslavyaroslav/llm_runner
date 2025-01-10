@@ -57,7 +57,7 @@ impl NetworkClient {
                     .build()
                     .unwrap_or_default()
             })
-            .unwrap_or_else(Client::new);
+            .unwrap_or_default();
 
         Self { client, headers }
     }
@@ -81,11 +81,12 @@ impl NetworkClient {
     ) -> Result<Request, OpenAIErrors> {
         let url = settings.url.to_string();
         let mut headers = self.headers.clone();
-        let auth_header = format!("Bearer {}", settings.token);
-        let auth_header =
-            HeaderValue::from_str(&auth_header).map_err(|e| OpenAIErrors::InvalidHeaderError(e.to_string()))?;
-
-        headers.insert(AUTHORIZATION, auth_header);
+        if let Some(token) = settings.token {
+            let auth_header = format!("Bearer {}", token);
+            let auth_header =
+                HeaderValue::from_str(&auth_header).map_err(|e| OpenAIErrors::InvalidHeaderError(e.to_string()))?;
+            headers.insert(AUTHORIZATION, auth_header);
+        }
 
         self.client
             .post(url)
@@ -344,7 +345,7 @@ mod tests {
                 }
             ],
             "stream": true,
-            "model": "gpt-4o",
+            "model": "gpt-4o-mini",
         });
 
         assert_eq!(payload_json, expected_payload);

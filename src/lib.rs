@@ -1,7 +1,7 @@
 mod cacher;
 mod network_client;
 mod openai_network_types;
-mod types;
+pub mod types;
 
 mod py_worker;
 pub mod sublime_python;

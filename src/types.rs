@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::openai_network_types::{Roles, ToolCall};
 
 #[allow(unused)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum PromptMode {
     View,
     Phantom,

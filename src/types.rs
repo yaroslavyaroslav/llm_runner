@@ -83,7 +83,12 @@ impl SublimeInputContent {
         path: Option<String>,
         scope: Option<String>,
     ) -> Self {
-        SublimeInputContent { content, path, scope, input_kind }
+        SublimeInputContent {
+            content,
+            path,
+            scope,
+            input_kind,
+        }
     }
 }
 

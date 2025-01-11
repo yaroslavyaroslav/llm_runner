@@ -1,10 +1,13 @@
 use std::error::Error;
+
 use tokio::sync::mpsc;
 
-use crate::cacher::Cacher;
-use crate::network_client::NetworkClient;
-use crate::openai_network_types::{OpenAIResponse, Roles};
-use crate::types::{AssistantSettings, CacheEntry, PromptMode, SublimeInputContent};
+use crate::{
+    cacher::Cacher,
+    network_client::NetworkClient,
+    openai_network_types::{OpenAIResponse, Roles},
+    types::{AssistantSettings, CacheEntry, PromptMode, SublimeInputContent},
+};
 
 #[allow(unused, dead_code)]
 #[derive(Clone, Debug)]
@@ -60,13 +63,15 @@ impl OpenAIWorker {
         cache_entries.extend(
             self.contents
                 .iter()
-                .map(|content| CacheEntry {
-                    content: content.content.clone(),
-                    path: content.path.clone(),
-                    scope: content.scope.clone(),
-                    role: Roles::User,
-                    tool_call: None,
-                    tool_call_id: None,
+                .map(|content| {
+                    CacheEntry {
+                        content: content.content.clone(),
+                        path: content.path.clone(),
+                        scope: content.scope.clone(),
+                        role: Roles::User,
+                        tool_call: None,
+                        tool_call_id: None,
+                    }
                 })
                 .collect::<Vec<_>>(),
         );
@@ -75,7 +80,11 @@ impl OpenAIWorker {
         }
 
         let payload = provider
-            .prepare_payload(assistant_settings.clone(), cache_entries, self.contents.clone())
+            .prepare_payload(
+                assistant_settings.clone(),
+                cache_entries,
+                self.contents.clone(),
+            )
             .map_err(|e| format!("Failed to prepare payload: {}", e))?;
 
         let request = provider
@@ -97,7 +106,13 @@ impl OpenAIWorker {
                 println!("Response: {:?}", response);
                 Ok(())
             }
-            Err(e) => Err(format!("Failed to execute network request: {}", e).into()),
+            Err(e) => {
+                Err(format!(
+                    "Failed to execute network request: {}",
+                    e
+                )
+                .into())
+            }
         }
     }
 }

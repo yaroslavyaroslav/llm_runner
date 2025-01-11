@@ -1,6 +1,7 @@
-use crate::types::{AssistantSettings, CacheEntry, SublimeInputContent};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+
+use crate::types::{AssistantSettings, CacheEntry, SublimeInputContent};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -107,12 +108,20 @@ impl OpenAICompletionRequest {
             stream: settings.stream,
             chat_model: settings.chat_model,
             advertisement: settings.advertisement,
-            temperature: settings.temperature.map(|t| t as f32),
+            temperature: settings
+                .temperature
+                .map(|t| t as f32),
             max_tokens: settings.max_tokens,
             max_completion_tokens: settings.max_completion_tokens,
-            top_p: settings.top_p.map(|t| t as f32),
-            frequency_penalty: settings.frequency_penalty.map(|f| f as f32),
-            presence_penalty: settings.presence_penalty.map(|p| p as f32),
+            top_p: settings
+                .top_p
+                .map(|t| t as f32),
+            frequency_penalty: settings
+                .frequency_penalty
+                .map(|f| f as f32),
+            presence_penalty: settings
+                .presence_penalty
+                .map(|p| p as f32),
             tools: settings.tools,
             parallel_tool_calls: settings.parallel_tool_calls,
         }
@@ -156,9 +165,7 @@ impl MessageContent {
 
 impl serde::ser::Serialize for MessageContent {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::ser::Serializer,
-    {
+    where S: serde::ser::Serializer {
         use serde::ser::SerializeMap;
 
         let mut map = serializer.serialize_map(Some(2))?;
@@ -176,9 +183,7 @@ impl serde::ser::Serialize for MessageContent {
 
 impl<'de> serde::de::Deserialize<'de> for MessageContent {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::de::Deserializer<'de>,
-    {
+    where D: serde::de::Deserializer<'de> {
         #[derive(Deserialize)]
         struct MessageContentIntermediate {
             #[serde(rename = "type")]
@@ -261,9 +266,7 @@ pub(crate) struct AssistantMessage {
 
 impl<'de> serde::de::Deserialize<'de> for Choice {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::de::Deserializer<'de>,
-    {
+    where D: serde::de::Deserializer<'de> {
         #[derive(Deserialize)]
         struct TempChoice {
             index: usize,
@@ -308,8 +311,9 @@ pub(crate) struct OpenAIResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn test_openai_request_serialization_simple() {
@@ -387,9 +391,7 @@ mod tests {
                 OpenAIMessage {
                     content: vec![MessageContent {
                         r#type: OpenAIMessageType::Text,
-                        content: ContentWrapper::Text(
-                            "This is the assistant speaking.".to_string(),
-                        ),
+                        content: ContentWrapper::Text("This is the assistant speaking.".to_string()),
                     }],
                     role: Roles::Assistant,
                     tool_call_id: None,
@@ -637,8 +639,7 @@ mod tests {
         println!("{}", serialized); // For debugging you can display it.
         assert_eq!(
             expected_serialized,
-            serde_json::to_value(serde_json::from_str::<OpenAIMessage>(&serialized).unwrap())
-                .unwrap(),
+            serde_json::to_value(serde_json::from_str::<OpenAIMessage>(&serialized).unwrap()).unwrap(),
         );
     }
 
@@ -666,14 +667,24 @@ mod tests {
         let response: OpenAIResponse = serde_json::from_str(json_data).unwrap();
 
         assert_eq!(response.id, Some("123".to_string()));
-        assert_eq!(response.object, Some("openai_response".to_string()));
+        assert_eq!(
+            response.object,
+            Some("openai_response".to_string())
+        );
         assert_eq!(response.created, Some(1616161616));
         assert_eq!(response.model, "gpt-4o");
         assert_eq!(response.choices.len(), 1);
         assert_eq!(response.choices[0].index, 0);
-        assert_eq!(response.choices[0].message.role, Roles::Assistant);
         assert_eq!(
-            response.choices[0].message.content,
+            response.choices[0]
+                .message
+                .role,
+            Roles::Assistant
+        );
+        assert_eq!(
+            response.choices[0]
+                .message
+                .content,
             Some("Response text".to_string())
         );
     }
@@ -702,14 +713,24 @@ mod tests {
         let response: OpenAIResponse = serde_json::from_str(json_data).unwrap();
 
         assert_eq!(response.id, Some("123".to_string()));
-        assert_eq!(response.object, Some("openai_response".to_string()));
+        assert_eq!(
+            response.object,
+            Some("openai_response".to_string())
+        );
         assert_eq!(response.created, Some(1616161616));
         assert_eq!(response.model, "gpt-4o");
         assert_eq!(response.choices.len(), 1);
         assert_eq!(response.choices[0].index, 0);
-        assert_eq!(response.choices[0].message.role, Roles::Assistant);
         assert_eq!(
-            response.choices[0].message.content,
+            response.choices[0]
+                .message
+                .role,
+            Roles::Assistant
+        );
+        assert_eq!(
+            response.choices[0]
+                .message
+                .content,
             Some("Response text".to_string())
         );
     }
@@ -728,17 +749,24 @@ mod tests {
             .map(|line| {
                 let data: serde_json::Value = serde_json::from_str(line).unwrap();
 
-                if data.get("role") == Some(&serde_json::Value::String("assistant".to_string())) {
-                    Box::new(serde_json::from_value::<AssistantMessage>(data).unwrap())
-                        as Box<dyn Any>
+                if data.get("role")
+                    == Some(&serde_json::Value::String(
+                        "assistant".to_string(),
+                    ))
+                {
+                    Box::new(serde_json::from_value::<AssistantMessage>(data).unwrap()) as Box<dyn Any>
                 } else {
                     Box::new(serde_json::from_value::<OpenAIMessage>(data).unwrap()) as Box<dyn Any>
                 }
             })
             .collect();
 
-        assert!(messages[0].downcast_ref::<AssistantMessage>().is_some());
-        assert!(messages[1].downcast_ref::<OpenAIMessage>().is_some());
+        assert!(messages[0]
+            .downcast_ref::<AssistantMessage>()
+            .is_some());
+        assert!(messages[1]
+            .downcast_ref::<OpenAIMessage>()
+            .is_some());
     }
 
     #[test]
@@ -767,12 +795,20 @@ mod tests {
         assert_eq!(tool_calls.len(), 1);
         let tool_call = &tool_calls[0];
         assert_eq!(tool_call.index, 0);
-        assert_eq!(tool_call.id, "call_etemzkk7d3atzyzsj3823b96");
+        assert_eq!(
+            tool_call.id,
+            "call_etemzkk7d3atzyzsj3823b96"
+        );
         assert_eq!(tool_call.r#type, "function");
         let function = &tool_call.function;
         assert_eq!(function.name, "create_file");
         let args: serde_json::Map<String, Value> =
             serde_json::from_str("{\"file_path\":\"/home/user/debug.txt\"}").unwrap();
-        assert_eq!(function.get_arguments_map().unwrap(), args);
+        assert_eq!(
+            function
+                .get_arguments_map()
+                .unwrap(),
+            args
+        );
     }
 }

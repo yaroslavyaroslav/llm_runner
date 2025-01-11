@@ -1,9 +1,11 @@
-use serde::de::Error;
-use serde::{Deserialize, Serialize};
+use std::{
+    fs::{File, OpenOptions},
+    io::{BufRead, Write},
+    path::Path,
+};
+
+use serde::{de::Error, Deserialize, Serialize};
 use serde_json::Error as SerdeError;
-use std::fs::{File, OpenOptions};
-use std::io::{BufRead, Write};
-use std::path::Path;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -41,9 +43,18 @@ impl Cacher {
                 let name_prefix = format!("{}_", input);
                 (
                     // cache_dir.clone(),
-                    format!("{}/{}chat_history.json", cache_dir, name_prefix),
-                    format!("{}/{}current_assistant.json", cache_dir, name_prefix),
-                    format!("{}/{}tokens_count.json", cache_dir, name_prefix),
+                    format!(
+                        "{}/{}chat_history.json",
+                        cache_dir, name_prefix
+                    ),
+                    format!(
+                        "{}/{}current_assistant.json",
+                        cache_dir, name_prefix
+                    ),
+                    format!(
+                        "{}/{}tokens_count.json",
+                        cache_dir, name_prefix
+                    ),
                 )
             }
         } else {
@@ -55,9 +66,11 @@ impl Cacher {
             )
         };
 
-        dbg!(&history_file);
-
-        Self { current_model_file, history_file, tokens_count_file }
+        Self {
+            current_model_file,
+            history_file,
+            tokens_count_file,
+        }
     }
 
     fn check_and_create(&self, path: &str) {
@@ -67,9 +80,7 @@ impl Cacher {
     }
 
     pub fn read_entries<T>(&self) -> Result<Vec<T>, SerdeError>
-    where
-        T: for<'de> Deserialize<'de>,
-    {
+    where T: for<'de> Deserialize<'de> {
         self.check_and_create(&self.history_file);
 
         let file = match File::open(&self.history_file) {
@@ -84,7 +95,12 @@ impl Cacher {
             let line = line.map_err(SerdeError::custom)?;
             match serde_json::from_str::<T>(&line) {
                 Ok(obj) => entries.push(obj),
-                Err(err) => eprintln!("Malformed line skipped: {} (Error: {})", num, err),
+                Err(err) => {
+                    eprintln!(
+                        "Malformed line skipped: {} (Error: {})",
+                        num, err
+                    )
+                }
             }
         }
 
@@ -121,11 +137,15 @@ impl Cacher {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::{
+        fs::File,
+        io::{BufRead, BufReader, Write},
+    };
+
     use serde::{Deserialize, Serialize};
-    use std::fs::File;
-    use std::io::{BufRead, BufReader, Write};
     use tempfile::TempDir;
+
+    use super::*;
 
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
     struct TestEntry {
@@ -147,8 +167,14 @@ mod tests {
             tokens_count_file: "".to_string(),
         };
 
-        let entry1 = TestEntry { id: 1, name: "Alice".to_string() };
-        let entry2 = TestEntry { id: 2, name: "Bob".to_string() };
+        let entry1 = TestEntry {
+            id: 1,
+            name: "Alice".to_string(),
+        };
+        let entry2 = TestEntry {
+            id: 2,
+            name: "Bob".to_string(),
+        };
 
         cacher.write_entry(&entry1);
         cacher.write_entry(&entry2);
@@ -157,8 +183,14 @@ mod tests {
         let reader = BufReader::new(file);
         let lines: Vec<_> = reader.lines().collect();
         assert_eq!(lines.len(), 2);
-        assert_eq!(lines[0].as_ref().unwrap(), &serde_json::to_string(&entry1).unwrap());
-        assert_eq!(lines[1].as_ref().unwrap(), &serde_json::to_string(&entry2).unwrap());
+        assert_eq!(
+            lines[0].as_ref().unwrap(),
+            &serde_json::to_string(&entry1).unwrap()
+        );
+        assert_eq!(
+            lines[1].as_ref().unwrap(),
+            &serde_json::to_string(&entry2).unwrap()
+        );
 
         let read_entries: Vec<TestEntry> = cacher.read_entries().unwrap();
 
@@ -202,7 +234,10 @@ mod tests {
             tokens_count_file: "".to_string(),
         };
 
-        let entry1 = TestEntry { id: 1, name: "Alice".to_string() };
+        let entry1 = TestEntry {
+            id: 1,
+            name: "Alice".to_string(),
+        };
 
         let valid_line = serde_json::to_string(&entry1).unwrap();
         let corrupted_line = "{ id: 2, name: Bob }";

@@ -1,14 +1,20 @@
-use futures_util::StreamExt;
-use serde_json::{Map, Value};
 use std::error::Error;
 
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
-use reqwest::{Client, Proxy, Request};
+use futures_util::StreamExt;
+use reqwest::{
+    header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
+    Client,
+    Proxy,
+    Request,
+};
 use serde::de::DeserializeOwned;
+use serde_json::{Map, Value};
 use tokio::sync::mpsc;
 
-use crate::openai_network_types::OpenAICompletionRequest;
-use crate::types::{AssistantSettings, CacheEntry, SublimeInputContent};
+use crate::{
+    openai_network_types::OpenAICompletionRequest,
+    types::{AssistantSettings, CacheEntry, SublimeInputContent},
+};
 
 #[derive(Debug)]
 #[allow(unused, dead_code, private_interfaces)]
@@ -33,7 +39,10 @@ impl std::fmt::Display for OpenAIErrors {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             OpenAIErrors::ContextLengthExceededException => {
-                write!(f, "The context length exceeds the limit")
+                write!(
+                    f,
+                    "The context length exceeds the limit"
+                )
             }
             OpenAIErrors::InvalidHeaderError(err) => write!(f, "Invalid header got passed {}", err),
             OpenAIErrors::UnknownException => write!(f, "An unknown exception occurred"),
@@ -47,7 +56,10 @@ impl std::fmt::Display for OpenAIErrors {
 impl NetworkClient {
     pub(crate) fn new(proxy: Option<String>) -> Self {
         let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
 
         let client = proxy
             .and_then(|proxy_line| Proxy::all(proxy_line).ok())
@@ -68,8 +80,11 @@ impl NetworkClient {
         cache_entries: Vec<CacheEntry>,
         sublime_inputs: Vec<SublimeInputContent>,
     ) -> Result<String, OpenAIErrors> {
-        let internal_messages =
-            OpenAICompletionRequest::create_openai_completion_request(settings, cache_entries, sublime_inputs);
+        let internal_messages = OpenAICompletionRequest::create_openai_completion_request(
+            settings,
+            cache_entries,
+            sublime_inputs,
+        );
 
         serde_json::to_string(&internal_messages).map_err(OpenAIErrors::JsonError)
     }
@@ -83,8 +98,8 @@ impl NetworkClient {
         let mut headers = self.headers.clone();
         if let Some(token) = settings.token {
             let auth_header = format!("Bearer {}", token);
-            let auth_header =
-                HeaderValue::from_str(&auth_header).map_err(|e| OpenAIErrors::InvalidHeaderError(e.to_string()))?;
+            let auth_header = HeaderValue::from_str(&auth_header)
+                .map_err(|e| OpenAIErrors::InvalidHeaderError(e.to_string()))?;
             headers.insert(AUTHORIZATION, auth_header);
         }
 
@@ -158,23 +173,35 @@ impl NetworkClient {
                 }
                 drop(sender);
 
-                Ok(serde_json::from_value::<T>(composable_response)?)
+                Ok(serde_json::from_value::<T>(
+                    composable_response,
+                )?)
             } else {
-                Err(format!("Request failed with status: {}", response.status()).into())
+                Err(format!(
+                    "Request failed with status: {}",
+                    response.status()
+                )
+                .into())
             }
         } else if response.status().is_success() {
             let payload = response.json::<T>().await?;
             Ok(payload)
         } else {
-            Err(format!("Request failed with status: {}", response.status()).into())
+            Err(format!(
+                "Request failed with status: {}",
+                response.status()
+            )
+            .into())
         }
     }
 }
 
 /// This function is actually handles the SSE stream from the llm
 /// There are two cases handled here so far:
-///  - llm text answer: the `"content"` field is getting concantinated during this call
-///  - llm function call: the `"tool_calls"[0]."function"."arguments"` field is getting concantinated during this call
+///  - llm text answer: the `"content"` field is getting concantinated during
+///    this call
+///  - llm function call: the `"tool_calls"[0]."function"."arguments"` field is
+///    getting concantinated during this call
 ///
 /// The main assumption here is that the response can never be mixed
 /// to contain both `"content"` and `"tool_calls"` in a single stream.
@@ -206,12 +233,14 @@ fn merge_json(base: &mut Value, addition: &Value) {
                             base_map.insert(key.to_string(), value.clone());
                         }
                     }
-                    _ => merge_json(
-                        base_map
-                            .entry(key)
-                            .or_insert(Value::Null),
-                        value,
-                    ),
+                    _ => {
+                        merge_json(
+                            base_map
+                                .entry(key)
+                                .or_insert(Value::Null),
+                            value,
+                        )
+                    }
                 }
             }
         }
@@ -244,7 +273,10 @@ fn merge_tool_call(base_item: &mut Value, addition_item: &Value) {
     ) {
         if let Some(base_args_str) = base_args.as_str() {
             if let Some(addition_args_str) = addition_args.as_str() {
-                *base_args = serde_json::json!(format!("{}{}", base_args_str, addition_args_str));
+                *base_args = serde_json::json!(format!(
+                    "{}{}",
+                    base_args_str, addition_args_str
+                ));
             } else {
                 *base_args = addition_args.clone();
             }
@@ -256,10 +288,12 @@ fn merge_tool_call(base_item: &mut Value, addition_item: &Value) {
 
 /// This function extracts a plain string for streaming it into UI
 /// This is either `"content"` field (the actual answer of the llm) or
-/// a function call, where it is the `"arguments"` the one that actually streams.
+/// a function call, where it is the `"arguments"` the one that actually
+/// streams.
 ///
 /// Thus there's low sense of showing the exact arguments of the call to a user
-/// only `"tool_calls"[0]."function"."name"` streams in the latter case here (it's a one shot).
+/// only `"tool_calls"[0]."function"."name"` streams in the latter case here
+/// (it's a one shot).
 fn obtain_delta(map: &Map<String, Value>) -> Option<String> {
     if let Some(delta) = map.get("delta") {
         if let Some(content) = delta
@@ -294,13 +328,16 @@ fn obtain_delta(map: &Map<String, Value>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::types::InputKind;
-
-    use super::*;
     use serde::{Deserialize, Serialize};
     use tokio::test;
-    use wiremock::matchers::{header, method};
-    use wiremock::{MockServer, ResponseTemplate};
+    use wiremock::{
+        matchers::{header, method},
+        MockServer,
+        ResponseTemplate,
+    };
+
+    use super::*;
+    use crate::types::InputKind;
 
     #[derive(Serialize, Deserialize, Debug)]
     struct TestMessage {
@@ -319,7 +356,7 @@ mod tests {
         let client = NetworkClient::new(None);
         let settings = AssistantSettings::default();
 
-        let cache_entries = vec![]; // Pass an empty vector for cache entries
+        let cache_entries = vec![];
         let sublime_inputs = vec![SublimeInputContent {
             content: Some("content".to_string()),
             path: None,
@@ -355,8 +392,13 @@ mod tests {
     async fn test_execute_response() {
         let mock_server = MockServer::start().await;
         let _mock = wiremock::Mock::given(method("POST"))
-            .and(header(CONTENT_TYPE.as_str(), "application/json"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("{\"id\": \"1\", \"object\": \"object\"}"))
+            .and(header(
+                CONTENT_TYPE.as_str(),
+                "application/json",
+            ))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string("{\"id\": \"1\", \"object\": \"object\"}"),
+            )
             .mount(&mock_server)
             .await;
 
@@ -364,7 +406,7 @@ mod tests {
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
 
-        let cache_entries = vec![]; // Placeholder for cache entries
+        let cache_entries = vec![];
         let sublime_inputs = vec![SublimeInputContent {
             content: Some("content".to_string()),
             path: None,
@@ -373,7 +415,11 @@ mod tests {
         }];
 
         let payload = client
-            .prepare_payload(settings.clone(), cache_entries, sublime_inputs)
+            .prepare_payload(
+                settings.clone(),
+                cache_entries,
+                sublime_inputs,
+            )
             .unwrap();
 
         let request = client
@@ -384,8 +430,14 @@ mod tests {
             .execute_request(request, None)
             .await;
 
-        assert_eq!(response.as_ref().unwrap().id, "1".to_string());
-        assert_eq!(response.unwrap().object, "object".to_string());
+        assert_eq!(
+            response.as_ref().unwrap().id,
+            "1".to_string()
+        );
+        assert_eq!(
+            response.unwrap().object,
+            "object".to_string()
+        );
     }
 
     #[tokio::test]
@@ -405,10 +457,16 @@ mod tests {
 
         "#;
         let _mock = wiremock::Mock::given(method("POST"))
-            .and(header(CONTENT_TYPE.as_str(), "application/json"))
+            .and(header(
+                CONTENT_TYPE.as_str(),
+                "application/json",
+            ))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .insert_header(CONTENT_TYPE.as_str(), "text/event-stream; charset=utf-8")
+                    .insert_header(
+                        CONTENT_TYPE.as_str(),
+                        "text/event-stream; charset=utf-8",
+                    )
                     .set_body_string(sse_data),
             )
             .mount(&mock_server)
@@ -418,7 +476,7 @@ mod tests {
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
 
-        let cache_entries = vec![]; // Pass an empty vector for cache entries
+        let cache_entries = vec![];
         let sublime_inputs = vec![SublimeInputContent {
             content: Some("content".to_string()),
             path: None,
@@ -427,7 +485,11 @@ mod tests {
         }];
 
         let payload = client
-            .prepare_payload(settings.clone(), cache_entries, sublime_inputs)
+            .prepare_payload(
+                settings.clone(),
+                cache_entries,
+                sublime_inputs,
+            )
             .unwrap();
 
         let request = client
@@ -445,8 +507,8 @@ mod tests {
             events.push(data);
         }
 
-        let binding = result.unwrap();
-        let content = dbg!(binding)
+        let content = result
+            .unwrap()
             .get("choices")
             .unwrap()
             .as_array()
@@ -469,7 +531,6 @@ mod tests {
     async fn test_sse_tool_calls_streaming() {
         let mock_server = MockServer::start().await;
 
-        // SSE content for testing tool_calls
         let sse_data = r#"
         data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"role":"assistant","content":null},"logprobs":null,"finish_reason":null}]}
 
@@ -487,10 +548,16 @@ mod tests {
         "#;
 
         let _mock = wiremock::Mock::given(method("POST"))
-            .and(header(CONTENT_TYPE.as_str(), "application/json"))
+            .and(header(
+                CONTENT_TYPE.as_str(),
+                "application/json",
+            ))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .insert_header(CONTENT_TYPE.as_str(), "text/event-stream; charset=utf-8")
+                    .insert_header(
+                        CONTENT_TYPE.as_str(),
+                        "text/event-stream; charset=utf-8",
+                    )
                     .set_body_string(sse_data),
             )
             .mount(&mock_server)
@@ -517,7 +584,7 @@ mod tests {
         }
 
         let binding = result.unwrap();
-        let tool_calls_array = dbg!(&binding)
+        let tool_calls_array = binding
             .get("choices")
             .unwrap()
             .as_array()
@@ -533,7 +600,6 @@ mod tests {
 
         assert_eq!(function_name.join(""), "create_file");
 
-        dbg!(tool_calls_array);
         assert_eq!(
             tool_calls_array[0]
                 .get("function")
@@ -545,7 +611,6 @@ mod tests {
             "create_file"
         );
 
-        dbg!(tool_calls_array);
         assert_eq!(
             tool_calls_array[0]
                 .get("function")
@@ -581,10 +646,16 @@ mod tests {
         "#;
 
         let _mock = wiremock::Mock::given(method("POST"))
-            .and(header(CONTENT_TYPE.as_str(), "application/json"))
+            .and(header(
+                CONTENT_TYPE.as_str(),
+                "application/json",
+            ))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .insert_header(CONTENT_TYPE.as_str(), "application/json")
+                    .insert_header(
+                        CONTENT_TYPE.as_str(),
+                        "application/json",
+                    )
                     .set_body_string(non_streaming_data),
             )
             .mount(&mock_server)

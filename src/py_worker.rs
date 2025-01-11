@@ -35,7 +35,14 @@ impl PythonWorker {
     #[new]
     #[pyo3(signature = (window_id, path, proxy=None))]
     fn new(window_id: usize, path: String, proxy: Option<String>) -> Self {
-        PythonWorker { window_id, view_id: None, prompt_mode: None, contents: None, cacher_path: path, proxy }
+        PythonWorker {
+            window_id,
+            view_id: None,
+            prompt_mode: None,
+            contents: None,
+            cacher_path: path,
+            proxy,
+        }
     }
 
     #[pyo3(signature = (view_id, prompt_mode, contents, assistant_settings))]
@@ -52,7 +59,12 @@ impl PythonWorker {
             let mut worker = OpenAIWorker::new(self.window_id, self.cacher_path.clone(), self.proxy.clone());
 
             worker
-                .run(view_id, contents, PromptMode::from(prompt_mode), assistant_settings)
+                .run(
+                    view_id,
+                    contents,
+                    PromptMode::from(prompt_mode),
+                    assistant_settings,
+                )
                 .await
         })
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))

@@ -28,6 +28,9 @@ pub(crate) struct CacheEntry {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) tool_call: Option<ToolCall>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tool_call_id: Option<String>,
 }
 
 impl From<SublimeInputContent> for CacheEntry {
@@ -38,6 +41,7 @@ impl From<SublimeInputContent> for CacheEntry {
             scope: content.scope,
             role: Roles::User,
             tool_call: None,
+            tool_call_id: None,
         }
     }
 }
@@ -54,6 +58,7 @@ impl From<AssistantMessage> for CacheEntry {
             scope: None,
             role: content.role,
             tool_call: first_tool_call,
+            tool_call_id: None,
         }
     }
 }

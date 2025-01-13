@@ -70,22 +70,30 @@ impl OpenAICompletionRequest {
                 }
             };
             messages.push(OpenAIMessage {
-                content: vec![MessageContent::from_text(content)],
+                content: vec![MessageContent::from_text(content)].into(),
                 role: Roles::System,
                 tool_call_id: None,
                 name: None,
+                tool_calls: None,
             });
         }
+
         for cache_entry in cache_entries {
             if let Some(content) = cache_entry.content {
                 messages.push(OpenAIMessage {
-                    content: vec![MessageContent::from_text(content)],
+                    content: vec![MessageContent::from_text(content)].into(),
                     role: cache_entry.role,
-                    tool_call_id: cache_entry
-                        .tool_call
-                        .as_ref()
-                        .map(|tc| tc.id.clone()),
+                    tool_call_id: cache_entry.tool_call_id,
                     name: None,
+                    tool_calls: None,
+                });
+            } else if let Some(tool_call) = cache_entry.tool_call {
+                messages.push(OpenAIMessage {
+                    content: None,
+                    role: cache_entry.role,
+                    tool_call_id: Some(tool_call.clone().id),
+                    name: None,
+                    tool_calls: Some(vec![tool_call]),
                 });
             }
         }
@@ -93,10 +101,11 @@ impl OpenAICompletionRequest {
         for sublime_input in sublime_inputs {
             if let Some(content) = sublime_input.content {
                 messages.push(OpenAIMessage {
-                    content: vec![MessageContent::from_text(content)],
+                    content: vec![MessageContent::from_text(content)].into(),
                     role: Roles::User,
                     tool_call_id: None,
                     name: None,
+                    tool_calls: None,
                 });
             }
         }
@@ -106,9 +115,7 @@ impl OpenAICompletionRequest {
             stream: settings.stream,
             chat_model: settings.chat_model,
             advertisement: settings.advertisement,
-            temperature: settings
-                .temperature
-                .map(|t| t as f64),
+            temperature: settings.temperature,
             max_tokens: settings.max_tokens,
             max_completion_tokens: settings.max_completion_tokens,
             top_p: settings
@@ -124,7 +131,7 @@ impl OpenAICompletionRequest {
                 .tools
                 .unwrap_or(false)
             {
-                Some(vec![CREATE_FILE.clone()].into())
+                Some(vec![CREATE_FILE.clone()])
             } else {
                 None
             },
@@ -142,10 +149,17 @@ impl OpenAICompletionRequest {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct OpenAIMessage {
-    pub(crate) content: Vec<MessageContent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) content: Option<Vec<MessageContent>>,
+
     pub(crate) role: Roles,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) tool_call_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tool_calls: Option<Vec<ToolCall>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) name: Option<String>,
 }
@@ -360,10 +374,12 @@ mod tests {
                 content: vec![MessageContent {
                     r#type: OpenAIMessageType::Text,
                     content: ContentWrapper::Text("Hello, world!".to_string()),
-                }],
+                }]
+                .into(),
                 role: Roles::User,
                 tool_call_id: None,
                 name: Some("test".to_string()),
+                tool_calls: None,
             }],
             stream: false,
             chat_model: "gpt-3.5-turbo".to_string(),
@@ -421,19 +437,23 @@ mod tests {
                                 detail: Some("Sample image".to_string()),
                             }),
                         },
-                    ],
+                    ]
+                    .into(),
                     role: Roles::User,
                     tool_call_id: Some("001".to_string()),
                     name: Some("test_user".to_string()),
+                    tool_calls: None,
                 },
                 OpenAIMessage {
                     content: vec![MessageContent {
                         r#type: OpenAIMessageType::Text,
                         content: ContentWrapper::Text("This is the assistant speaking.".to_string()),
-                    }],
+                    }]
+                    .into(),
                     role: Roles::Assistant,
                     tool_call_id: None,
                     name: Some("assistant".to_string()),
+                    tool_calls: None,
                 },
             ],
             stream: true,
@@ -680,10 +700,11 @@ mod tests {
         ];
 
         let openai_message = OpenAIMessage {
-            content: message_content,
+            content: Some(message_content),
             role: Roles::User,
             tool_call_id: None,
             name: Some("OpenAI_completion".to_string()),
+            tool_calls: None,
         };
 
         let serialized = serde_json::to_string(&openai_message).unwrap();

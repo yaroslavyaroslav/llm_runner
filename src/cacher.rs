@@ -251,4 +251,104 @@ mod tests {
         assert_eq!(read_entries.len(), 1);
         assert_eq!(read_entries[0], entry1);
     }
+
+    use crate::{
+        openai_network_types::{Function, Roles, ToolCall},
+        types::CacheEntry,
+    };
+
+    #[test]
+    fn test_read_entries_with_mock_data() {
+        let temp_dir = TempDir::new().unwrap();
+        let history_path = temp_dir
+            .path()
+            .join("test_history.json");
+        let cacher = Cacher {
+            history_file: history_path
+                .to_string_lossy()
+                .into_owned(),
+            current_model_file: "".to_string(),
+            tokens_count_file: "".to_string(),
+        };
+
+        // Mock JSON entries to write to the file
+        let mock_entries = vec![
+            r#"{"content":"Test request acknowledged.","role":"assistant"}"#,
+            r#"{"content":"This is the test request, provide me 3 words response","role":"user"}"#,
+            r#"{"role":"assistant","tool_call":{"id":"call_f4Ixx2ruFvbbqifrMKZ8Cxju","type":"function","function":{"name":"create_file","arguments":"{\"file_path\":\"test_response.txt\"}"}}}"#,
+            r#"{"role":"tool","tool_call_id":"call_f4Ixx2ruFvbbqifrMKZ8Cxju", "content": "created"}"#,
+        ];
+
+        // Write mock entries to the cache file
+        {
+            let mut file = File::create(&cacher.history_file).unwrap();
+            for entry in mock_entries {
+                writeln!(file, "{}", entry).unwrap();
+            }
+        }
+
+        // Read entries from the cache
+        let read_entries: Vec<CacheEntry> = cacher.read_entries().unwrap();
+
+        // Check the contents of the read entries
+        assert_eq!(read_entries.len(), 4);
+
+        // Checking the first entry
+        assert_eq!(
+            read_entries[0],
+            CacheEntry {
+                content: Some("Test request acknowledged.".to_string()),
+                role: Roles::Assistant,
+                tool_call: None,
+                path: None,
+                scope: None,
+                tool_call_id: None
+            }
+        );
+
+        // Checking the second entry
+        assert_eq!(
+            read_entries[1],
+            CacheEntry {
+                content: Some("This is the test request, provide me 3 words response".to_string()),
+                role: Roles::User,
+                tool_call: None,
+                path: None,
+                scope: None,
+                tool_call_id: None
+            }
+        );
+
+        // Checking the third entry
+        assert_eq!(
+            read_entries[2],
+            CacheEntry {
+                content: None,
+                role: Roles::Assistant,
+                tool_call: Some(ToolCall {
+                    id: "call_f4Ixx2ruFvbbqifrMKZ8Cxju".to_string(),
+                    r#type: "function".to_string(),
+                    function: Function {
+                        name: "create_file".to_string(),
+                        arguments: "{\"file_path\":\"test_response.txt\"}".to_string(),
+                    }
+                }),
+                path: None,
+                scope: None,
+                tool_call_id: None
+            }
+        );
+
+        assert_eq!(
+            read_entries[3],
+            CacheEntry {
+                content: Some("created".to_string()),
+                role: Roles::Tool,
+                tool_call: None,
+                path: None,
+                scope: None,
+                tool_call_id: Some("call_f4Ixx2ruFvbbqifrMKZ8Cxju".to_string())
+            }
+        );
+    }
 }

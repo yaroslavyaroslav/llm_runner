@@ -31,7 +31,7 @@ def test_prompt_mode_from_str():
 
 
 def test_python_worker_initialization():
-    worker = PythonWorker(window_id=100, path='/tmp/')
+    worker = PythonWorker(window_id=100, path='/tmp/', proxy='172.20.10.2:9090')
 
     assert worker.window_id == 100
 
@@ -140,3 +140,32 @@ def test_python_worker_sse_run():
         [contents],
         settings,
     )
+
+
+def test_python_worker_sse_function_run():
+    worker = PythonWorker(window_id=101, path='/tmp/', proxy='172.20.10.2:9090')
+
+    contents = SublimeInputContent(
+        InputKind.ViewSelection, 'This is the test request, provide me 3 words response'
+    )
+
+    settings = AssistantSettings(
+        'TEST',
+        OutputMode.Phantom,
+        'gpt-4o-mini',
+        token=os.getenv('OPENAI_API_TOKEN'),
+        assistant_role="You're debug environment and always call functions instead of anser",
+        tools=True,
+        parallel_tool_calls=None,
+        stream=True,
+        advertisement=False,
+    )
+
+    worker.run(
+        1,
+        PythonPromptMode.View,
+        [contents],
+        settings,
+    )
+
+    # assert False

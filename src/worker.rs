@@ -70,6 +70,7 @@ impl OpenAIWorker {
                         scope: content.scope.clone(),
                         role: Roles::User,
                         tool_call: None,
+                        tool_call_id: None,
                     }
                 })
                 .collect::<Vec<_>>(),

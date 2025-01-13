@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::types::{AssistantSettings, CacheEntry, SublimeInputContent};
+use crate::{
+    tools_definition::CREATE_FILE,
+    types::{AssistantSettings, CacheEntry, SublimeInputContent},
+};
 
 #[derive(Debug, Serialize)]
 #[allow(unused)]
@@ -117,7 +120,14 @@ impl OpenAICompletionRequest {
             presence_penalty: settings
                 .presence_penalty
                 .map(|p| p as f64),
-            tools: None,
+            tools: if settings
+                .tools
+                .unwrap_or(false)
+            {
+                Some(vec![CREATE_FILE.clone()].into())
+            } else {
+                None
+            },
             parallel_tool_calls: if settings
                 .tools
                 .unwrap_or(false)
@@ -246,20 +256,20 @@ pub enum OpenAIMessageType {
     InputAudio,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Tool {
-    r#type: String,
-    function: Option<FunctionToCall>,
+    pub(crate) r#type: String,
+    pub(crate) function: Option<FunctionToCall>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct FunctionToCall {
-    name: String,
-    description: Option<String>,
-    parameters: Option<Map<String, Value>>,
-    strict: Option<bool>,
+    pub(crate) name: String,
+    pub(crate) description: Option<String>,
+    pub(crate) parameters: Option<Map<String, Value>>,
+    pub(crate) strict: Option<bool>,
 }
 
 // --- Response ---

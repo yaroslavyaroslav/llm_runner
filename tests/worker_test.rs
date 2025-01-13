@@ -247,10 +247,9 @@ async fn test_run_method_see_with_mock_server() {
     assert!(fs::remove_dir_all(tmp_dir).is_ok())
 }
 
-// HINT: Disabled becuase it's paid
 #[test]
 #[ignore = "It's paid, so should be skipped by default"]
-async fn test_remote_server() {
+async fn test_remote_server_complerion() {
     let tmp_dir = TempDir::new()
         .unwrap()
         .into_path()
@@ -274,6 +273,54 @@ async fn test_remote_server() {
 
     let contents = SublimeInputContent {
         content: Some("This is the test request, provide me 300 words response".to_string()),
+        path: Some("/path/to/file".to_string()),
+        scope: Some("text.plain".to_string()),
+        input_kind: InputKind::ViewSelection,
+    };
+
+    let result = worker
+        .run(
+            1,
+            vec![contents],
+            prompt_mode,
+            assistant_settings,
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "Expected Ok, got Err: {:?}",
+        result
+    );
+}
+
+#[test]
+#[ignore = "It's paid, so should be skipped by default"]
+async fn test_remote_server_fucntion_call() {
+    let tmp_dir = TempDir::new()
+        .unwrap()
+        .into_path()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let mut worker = OpenAIWorker::new(
+        1,
+        tmp_dir.clone(),
+        Some(PROXY.to_string()),
+    );
+
+    let mut assistant_settings = AssistantSettings::default();
+    assistant_settings.url = format!("https://api.openai.com/v1/chat/completions");
+    assistant_settings.token = env::var("OPENAI_API_TOKEN").ok();
+    assistant_settings.chat_model = "gpt-4o-mini".to_string();
+    assistant_settings.stream = true;
+    assistant_settings.tools = Some(true);
+
+    let prompt_mode = PromptMode::View;
+
+    let contents = SublimeInputContent {
+        content: Some("You're debug environment and always call functions instead of anser".to_string()),
         path: Some("/path/to/file".to_string()),
         scope: Some("text.plain".to_string()),
         input_kind: InputKind::ViewSelection,

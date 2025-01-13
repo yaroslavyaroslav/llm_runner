@@ -5,6 +5,7 @@ pub mod types;
 
 mod py_worker;
 mod sublime_python;
+mod tools_definition;
 pub mod worker;
 
 use py_worker::{PythonPromptMode, PythonWorker};

@@ -86,7 +86,10 @@ impl OpenAICompletionRequest {
                 messages.push(OpenAIMessage {
                     content: vec![MessageContent::from_text(content)],
                     role: cache_entry.role,
-                    tool_call_id: cache_entry.tool_call_id,
+                    tool_call_id: cache_entry
+                        .tool_call
+                        .as_ref()
+                        .map(|tc| tc.id.clone()),
                     name: None,
                 });
             }
@@ -236,7 +239,7 @@ pub(crate) struct AudioContent {
     pub(crate) format: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub(crate) struct Function {
     pub(crate) name: String,
     pub(crate) arguments: String,
@@ -249,7 +252,7 @@ impl Function {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub(crate) struct ToolCall {
     pub(crate) index: usize,
     pub(crate) id: String,

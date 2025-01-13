@@ -70,7 +70,6 @@ impl OpenAIWorker {
                         scope: content.scope.clone(),
                         role: Roles::User,
                         tool_call: None,
-                        tool_call_id: None,
                     }
                 })
                 .collect::<Vec<_>>(),
@@ -104,6 +103,16 @@ impl OpenAIWorker {
                     }
                 }
                 println!("Response: {:?}", response);
+                let message = response
+                    .choices
+                    .first()
+                    .cloned()
+                    .ok_or(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "No choices found in the response",
+                    ))?
+                    .message;
+                cacher.write_entry(&CacheEntry::from(message));
                 Ok(())
             }
             Err(e) => {

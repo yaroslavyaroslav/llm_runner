@@ -3,14 +3,6 @@ use serde_json::{Map, Value};
 
 use crate::types::{AssistantSettings, CacheEntry, SublimeInputContent};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum OpenAIMessageType {
-    Text,
-    ImageUrl,
-    InputAudio,
-}
-
 #[derive(Debug, Serialize)]
 #[allow(unused)]
 pub struct OpenAICompletionRequest {
@@ -25,7 +17,7 @@ pub struct OpenAICompletionRequest {
     pub(crate) advertisement: bool,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) temperature: Option<f32>,
+    pub(crate) temperature: Option<f64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) max_tokens: Option<usize>,
@@ -34,19 +26,19 @@ pub struct OpenAICompletionRequest {
     pub(crate) max_completion_tokens: Option<usize>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) top_p: Option<f32>,
+    pub(crate) top_p: Option<f64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) frequency_penalty: Option<f32>,
+    pub(crate) frequency_penalty: Option<f64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) presence_penalty: Option<f32>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) tools: Option<bool>,
+    pub(crate) presence_penalty: Option<f64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) parallel_tool_calls: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tools: Option<Vec<Tool>>,
 }
 
 impl OpenAICompletionRequest {
@@ -113,31 +105,29 @@ impl OpenAICompletionRequest {
             advertisement: settings.advertisement,
             temperature: settings
                 .temperature
-                .map(|t| t as f32),
+                .map(|t| t as f64),
             max_tokens: settings.max_tokens,
             max_completion_tokens: settings.max_completion_tokens,
             top_p: settings
                 .top_p
-                .map(|t| t as f32),
+                .map(|t| t as f64),
             frequency_penalty: settings
                 .frequency_penalty
-                .map(|f| f as f32),
+                .map(|f| f as f64),
             presence_penalty: settings
                 .presence_penalty
-                .map(|p| p as f32),
-            tools: settings.tools,
-            parallel_tool_calls: settings.parallel_tool_calls,
+                .map(|p| p as f64),
+            tools: None,
+            parallel_tool_calls: if settings
+                .tools
+                .unwrap_or(false)
+            {
+                Some(false)
+            } else {
+                None
+            },
         }
     }
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[serde(rename_all = "lowercase")]
-pub enum Roles {
-    User,
-    Assistant,
-    Tool,
-    System,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -240,31 +230,54 @@ pub(crate) struct AudioContent {
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub(crate) struct Function {
-    pub(crate) name: String,
-    pub(crate) arguments: String,
-}
-
-#[allow(unused)]
-impl Function {
-    pub(crate) fn get_arguments_map(&self) -> Result<Map<String, Value>, serde_json::Error> {
-        serde_json::from_str(self.arguments.as_str())
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub(crate) struct ToolCall {
-    pub(crate) index: usize,
-    pub(crate) id: String,
-    pub(crate) r#type: String,
-    pub(crate) function: Function,
+#[serde(rename_all = "lowercase")]
+pub enum Roles {
+    User,
+    Assistant,
+    Tool,
+    System,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub(crate) struct AssistantMessage {
-    pub(crate) role: Roles,
-    pub(crate) content: Option<String>,
-    pub(crate) tool_calls: Option<Vec<ToolCall>>,
+#[serde(rename_all = "snake_case")]
+pub enum OpenAIMessageType {
+    Text,
+    ImageUrl,
+    InputAudio,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct Tool {
+    r#type: String,
+    function: Option<FunctionToCall>,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct FunctionToCall {
+    name: String,
+    description: Option<String>,
+    parameters: Option<Map<String, Value>>,
+    strict: Option<bool>,
+}
+
+// --- Response ---
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub(crate) struct OpenAIResponse {
+    pub(crate) id: Option<String>,
+    pub(crate) object: Option<String>,
+    pub(crate) created: Option<i64>,
+    pub(crate) model: String,
+    pub(crate) choices: Vec<Choice>,
+}
+
+#[derive(Serialize, Debug, PartialEq, Clone)]
+pub(crate) struct Choice {
+    pub(crate) index: usize,
+    pub(crate) finish_reason: Option<String>,
+    pub(crate) message: AssistantMessage,
 }
 
 impl<'de> serde::de::Deserialize<'de> for Choice {
@@ -296,20 +309,32 @@ impl<'de> serde::de::Deserialize<'de> for Choice {
     }
 }
 
-#[derive(Serialize, Debug, PartialEq)]
-pub(crate) struct Choice {
-    pub(crate) index: usize,
-    pub(crate) finish_reason: Option<String>,
-    pub(crate) message: AssistantMessage,
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub(crate) struct AssistantMessage {
+    pub(crate) role: Roles,
+    pub(crate) content: Option<String>,
+    pub(crate) tool_calls: Option<Vec<ToolCall>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub(crate) struct OpenAIResponse {
-    pub(crate) id: Option<String>,
-    pub(crate) object: Option<String>,
-    pub(crate) created: Option<i64>,
-    pub(crate) model: String,
-    pub(crate) choices: Vec<Choice>,
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub(crate) struct ToolCall {
+    // pub(crate) index: usize,
+    pub(crate) id: String,
+    pub(crate) r#type: String,
+    pub(crate) function: Function,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub(crate) struct Function {
+    pub(crate) name: String,
+    pub(crate) arguments: String,
+}
+
+#[allow(unused)]
+impl Function {
+    pub(crate) fn get_arguments_map(&self) -> Result<Map<String, Value>, serde_json::Error> {
+        serde_json::from_str(self.arguments.as_str())
+    }
 }
 
 #[cfg(test)]
@@ -410,7 +435,30 @@ mod tests {
             top_p: Some(0.9),
             frequency_penalty: Some(0.8),
             presence_penalty: Some(0.3),
-            tools: Some(true),
+            tools: Some(vec![Tool {
+                r#type: "function".to_string(),
+                function: Some(FunctionToCall {
+                    name: "create_file".to_string(),
+                    description: Some(
+                        "Create a new file with the specified content at the given path.".to_string(),
+                    ),
+                    parameters: json!({
+                        "properties": {
+                            "file_path": {
+                                "type": "string",
+                                "description": "The path where the file will be created."
+                            }
+                        },
+                        "type": "object",
+                        "required": ["file_path"],
+                        "additionalProperties": false
+                    })
+                    .as_object()
+                    .cloned(),
+                    strict: Some(true),
+                }),
+            }]),
+
             parallel_tool_calls: Some(false),
         };
 
@@ -454,7 +502,25 @@ mod tests {
             "top_p": 0.9,
             "frequency_penalty": 0.8,
             "presence_penalty": 0.3,
-            "tools": true,
+            "tools": [json!({
+                "type": "function",
+                "function": {
+                    "name": "create_file",
+                    "parameters": {
+                        "properties": {
+                            "file_path": {
+                                "type": "string",
+                                "description": "The path where the file will be created."
+                            }
+                        },
+                        "type": "object",
+                        "required": ["file_path"],
+                        "additionalProperties": false
+                    },
+                    "description": "Create a new file with the specified content at the given path.",
+                    "strict": true
+                }
+            })],
             "parallel_tool_calls": false
         });
 
@@ -543,7 +609,6 @@ mod tests {
             role: Roles::Assistant,
             content: Some("This is a response with a tool call.".to_string()),
             tool_calls: Some(vec![ToolCall {
-                index: 0,
                 id: "tool_call_1".to_string(),
                 r#type: "function_call".to_string(),
                 function: Function {
@@ -561,7 +626,6 @@ mod tests {
             "content": "This is a response with a tool call.",
             "tool_calls": [
                 {
-                    "index": 0,
                     "id": "tool_call_1",
                     "type": "function_call",
                     "function": {
@@ -797,7 +861,6 @@ mod tests {
         let tool_calls = message.tool_calls.unwrap();
         assert_eq!(tool_calls.len(), 1);
         let tool_call = &tool_calls[0];
-        assert_eq!(tool_call.index, 0);
         assert_eq!(
             tool_call.id,
             "call_etemzkk7d3atzyzsj3823b96"

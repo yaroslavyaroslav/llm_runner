@@ -22,8 +22,8 @@ use crate::{
     types::{AssistantSettings, CacheEntry, SublimeInputContent},
 };
 
+#[allow(unused)]
 #[derive(Debug)]
-#[allow(unused, dead_code, private_interfaces)]
 pub enum OpenAIErrors {
     ContextLengthExceededException,
     UnknownException,
@@ -32,7 +32,6 @@ pub enum OpenAIErrors {
     JsonError(serde_json::Error),
 }
 
-#[allow(unused, dead_code, private_interfaces)]
 #[derive(Clone)]
 pub struct NetworkClient {
     client: Client,
@@ -58,7 +57,6 @@ impl std::fmt::Display for OpenAIErrors {
     }
 }
 
-#[allow(unused, dead_code, private_interfaces)]
 impl NetworkClient {
     pub(crate) fn new(proxy: Option<String>) -> Self {
         let mut headers = HeaderMap::new();
@@ -144,7 +142,6 @@ impl NetworkClient {
 
                     for line in data.lines() {
                         if line.trim() == "data: [DONE]" {
-                            sender.closed();
                             break;
                         }
 
@@ -166,7 +163,7 @@ impl NetworkClient {
                                     .ok_or("Failed to parse JSON")?,
                             ) {
                                 let cloned_sender = sender.clone();
-                                let sync_code = tokio::spawn(async move {
+                                tokio::spawn(async move {
                                     if cloned_sender
                                         .send(content)
                                         .await
@@ -178,13 +175,26 @@ impl NetworkClient {
                             }
 
                             if cancel_flag.load(Ordering::SeqCst) {
-                                sender.send("\n[ABORTED]\n".to_string());
-                                sender.closed();
                                 break;
                             }
                         }
                     }
                 }
+                if cancel_flag.load(Ordering::SeqCst) {
+                    let cloned_sender = sender.clone();
+
+                    tokio::spawn(async move {
+                        if cloned_sender
+                            .clone()
+                            .send("\n[ABORTED]".to_string())
+                            .await
+                            .is_err()
+                        {
+                            eprintln!("Failed to send [ABORTED]");
+                        }
+                    });
+                }
+
                 drop(sender);
 
                 Ok(serde_json::from_value::<T>(
@@ -734,5 +744,93 @@ mod tests {
                 .unwrap(),
             r#"{ "param1": "value1" }"#
         );
+    }
+
+    #[tokio::test]
+    async fn test_network_client_abort() {
+        let mock_server = MockServer::start().await;
+
+        // SSE content for testing
+        let sse_data = r#"
+        data: {"choices":[{"delta":{"content":"The","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
+
+        data: {"choices":[{"delta":{"content":" ","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
+
+        data: {"choices":[{"delta":{"content":"FAIL","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
+
+        data: [DONE]
+
+        "#;
+
+        wiremock::Mock::given(method("POST"))
+            .and(header(
+                CONTENT_TYPE.as_str(),
+                "application/json",
+            ))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header(
+                        CONTENT_TYPE.as_str(),
+                        "text/event-stream; charset=utf-8",
+                    )
+                    .set_body_string(sse_data),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let settings = AssistantSettings {
+            name: "Test Assistant".to_string(),
+            output_mode: crate::types::OutputMode::Phantom,
+            chat_model: "gpt-4o-mini".to_string(),
+            url: mock_server.uri(),
+            token: None,
+            assistant_role: None,
+            temperature: None,
+            max_tokens: None,
+            max_completion_tokens: None,
+            top_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            tools: None,
+            parallel_tool_calls: None,
+            stream: true,
+            advertisement: false,
+        };
+
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+
+        let cancel_flag_clone = Arc::clone(&cancel_flag);
+
+        let (tx, mut rx) = mpsc::channel(10);
+
+        let task = tokio::spawn(async move {
+            let client = NetworkClient::new(None);
+            let payload = "dummy payload";
+            let request = client
+                .prepare_request(settings, payload.to_string())
+                .unwrap();
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+            let response = client
+                .execute_request::<Map<String, Value>>(request, Some(tx), cancel_flag_clone)
+                .await;
+
+            match response {
+                Ok(_) => println!("Request completed successfully!"),
+                Err(e) => println!("Request failed: {:?}", e),
+            }
+        });
+
+        cancel_flag.store(true, Ordering::SeqCst);
+
+        let mut output = vec![];
+        while let Some(string) = rx.recv().await {
+            output.push(string);
+        }
+
+        let _ = task.await;
+
+        assert_eq!(output, vec!["The", "\n[ABORTED]"]); // Only the first chunk should proceed
     }
 }

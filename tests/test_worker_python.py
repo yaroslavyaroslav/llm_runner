@@ -20,6 +20,12 @@ TEST_FUNCTION_ASSISTANT_SETTINGS = AssistantSettings(
     advertisement=False,
 )
 
+PROXY = '192.168.1.115:9090'
+
+
+def my_handler(data: str) -> None:
+    print(f'Received data: {data}')
+
 
 def test_prompt_mode_from_str():
     assert PythonPromptMode.from_str('view') == PythonPromptMode.View
@@ -31,7 +37,7 @@ def test_prompt_mode_from_str():
 
 
 def test_python_worker_initialization():
-    worker = PythonWorker(window_id=100, path='/tmp/', proxy='172.20.10.2:9090')
+    worker = PythonWorker(window_id=100, path='/tmp/', proxy=PROXY)
 
     assert worker.window_id == 100
 
@@ -89,7 +95,7 @@ def test_sublime_input_content():
 
 
 def test_python_worker_plain_run():
-    worker = PythonWorker(window_id=101, path='/tmp/', proxy='172.20.10.2:9090')
+    worker = PythonWorker(window_id=101, path='/tmp/', proxy=PROXY)
 
     contents = SublimeInputContent(
         InputKind.ViewSelection, 'This is the test request, provide me 3 words response'
@@ -116,10 +122,10 @@ def test_python_worker_plain_run():
 
 
 def test_python_worker_sse_run():
-    worker = PythonWorker(window_id=101, path='/tmp/', proxy='172.20.10.2:9090')
+    worker = PythonWorker(window_id=101, path='/tmp/', proxy=PROXY)
 
     contents = SublimeInputContent(
-        InputKind.ViewSelection, 'This is the test request, provide me 3 words response'
+        InputKind.ViewSelection, 'This is the test request, provide me 30 words response'
     )
 
     settings = AssistantSettings(
@@ -134,16 +140,13 @@ def test_python_worker_sse_run():
         advertisement=False,
     )
 
-    worker.run(
-        1,
-        PythonPromptMode.View,
-        [contents],
-        settings,
-    )
+    worker.run(1, PythonPromptMode.View, [contents], settings, my_handler)
+
+    # assert False
 
 
 def test_python_worker_sse_function_run():
-    worker = PythonWorker(window_id=101, path='/tmp/', proxy='172.20.10.2:9090')
+    worker = PythonWorker(window_id=101, path='/tmp/', proxy=PROXY)
 
     contents = SublimeInputContent(
         InputKind.ViewSelection, 'This is the test request, provide me 3 words response'
@@ -161,11 +164,6 @@ def test_python_worker_sse_function_run():
         advertisement=False,
     )
 
-    worker.run(
-        1,
-        PythonPromptMode.View,
-        [contents],
-        settings,
-    )
+    worker.run(1, PythonPromptMode.View, [contents], settings, my_handler)
 
     # assert False

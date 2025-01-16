@@ -45,18 +45,30 @@ impl PythonWorker {
         }
     }
 
-    #[pyo3(signature = (view_id, prompt_mode, contents, assistant_settings))]
+    #[pyo3(signature = (view_id, prompt_mode, contents, assistant_settings, handler=None))]
     fn run(
         &self,
         view_id: usize,
         prompt_mode: PythonPromptMode,
         contents: Vec<SublimeInputContent>,
         assistant_settings: AssistantSettings,
+        handler: Option<PyObject>,
     ) -> PyResult<()> {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
-            #[rustfmt::skip]
-            let mut worker = OpenAIWorker::new(self.window_id, self.cacher_path.clone(), self.proxy.clone());
+            let mut worker = OpenAIWorker::new(
+                self.window_id,
+                self.cacher_path.clone(),
+                self.proxy.clone(),
+            );
+
+            let handler = handler.map(|h| {
+                move |data: String| {
+                    Python::with_gil(|py| {
+                        h.call1(py, (data,)).ok();
+                    });
+                }
+            });
 
             worker
                 .run(
@@ -64,6 +76,7 @@ impl PythonWorker {
                     contents,
                     PromptMode::from(prompt_mode),
                     assistant_settings,
+                    handler,
                 )
                 .await
         })

@@ -11,7 +11,7 @@ use wiremock::{
     ResponseTemplate,
 };
 
-static PROXY: &str = "127.0.0.1:9090";
+static PROXY: &str = "192.168.1.115:9090";
 
 #[tokio::test]
 async fn test_run_chact_method_with_mock_server() {
@@ -77,6 +77,7 @@ async fn test_run_chact_method_with_mock_server() {
             vec![contents],
             prompt_mode,
             assistant_settings,
+            None::<fn(String)>,
         )
         .await;
 
@@ -160,6 +161,7 @@ async fn test_run_tool_method_with_mock_server() {
             vec![contents],
             prompt_mode,
             assistant_settings,
+            None::<fn(String)>,
         )
         .await;
 
@@ -236,6 +238,7 @@ async fn test_run_method_see_with_mock_server() {
             vec![contents],
             prompt_mode,
             assistant_settings,
+            Some(|_| {}),
         )
         .await;
 
@@ -284,6 +287,7 @@ async fn test_remote_server_complerion() {
             vec![contents],
             prompt_mode,
             assistant_settings,
+            Some(|_| {}),
         )
         .await;
 
@@ -332,6 +336,7 @@ async fn test_remote_server_fucntion_call() {
             vec![contents],
             prompt_mode,
             assistant_settings,
+            Some(|_| {}), // None::<fn(String)>,
         )
         .await;
 

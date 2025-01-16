@@ -4,6 +4,7 @@ mod openai_network_types;
 pub mod types;
 
 mod py_worker;
+pub mod stream_handler;
 mod sublime_python;
 mod tools_definition;
 pub mod worker;

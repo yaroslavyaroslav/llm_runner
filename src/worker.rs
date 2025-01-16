@@ -6,6 +6,7 @@ use crate::{
     cacher::Cacher,
     network_client::NetworkClient,
     openai_network_types::{OpenAIResponse, Roles},
+    stream_handler::StreamHandler,
     types::{AssistantSettings, CacheEntry, PromptMode, SublimeInputContent},
 };
 
@@ -35,13 +36,17 @@ impl OpenAIWorker {
         }
     }
 
-    pub async fn run(
+    pub async fn run<F>(
         &mut self,
         view_id: usize,
         contents: Vec<SublimeInputContent>,
         prompt_mode: PromptMode,
         assistant_settings: AssistantSettings,
-    ) -> Result<(), Box<dyn Error>> {
+        handler: Option<F>,
+    ) -> Result<(), Box<dyn Error>>
+    where
+        F: FnMut(String) + Send + 'static,
+    {
         // Update instance variables
         self.view_id = Some(view_id);
         self.prompt_mode = Some(prompt_mode);
@@ -98,12 +103,14 @@ impl OpenAIWorker {
 
         match execute_response {
             Ok(response) => {
-                if let Some(mut rx) = rx {
-                    while let Some(data) = rx.recv().await {
-                        println!("Streaming data: {}", data);
-                    }
+                if let Some(rx) = rx {
+                    let handler = handler.unwrap();
+                    let mut stream_handler = StreamHandler::new(rx);
+                    stream_handler
+                        .handle_stream_with(handler)
+                        .await;
                 }
-                println!("Response: {:?}", response);
+
                 let message = response
                     .choices
                     .first()

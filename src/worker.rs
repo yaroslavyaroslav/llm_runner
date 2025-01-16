@@ -1,4 +1,10 @@
-use std::error::Error;
+use std::{
+    error::Error,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 use tokio::sync::mpsc;
 
@@ -21,6 +27,8 @@ pub struct OpenAIWorker {
     pub(crate) assistant_settings: Option<AssistantSettings>,
     pub(crate) proxy: Option<String>,
     pub(crate) cacher_path: String,
+
+    cancel_signal: Arc<AtomicBool>,
 }
 
 impl OpenAIWorker {
@@ -33,6 +41,7 @@ impl OpenAIWorker {
             assistant_settings: None,
             proxy,
             cacher_path: path,
+            cancel_signal: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -96,9 +105,11 @@ impl OpenAIWorker {
             .prepare_request(assistant_settings.clone(), payload)
             .map_err(|e| format!("Failed to prepare request: {}", e))?;
 
+        let cloned_cancel_flag = Arc::clone(&self.cancel_signal);
+
         // TODO: To make type to cast conditional to support various of protocols
         let execute_response = provider
-            .execute_request::<OpenAIResponse>(request, tx)
+            .execute_request::<OpenAIResponse>(request, tx, cloned_cancel_flag)
             .await;
 
         match execute_response {
@@ -131,5 +142,10 @@ impl OpenAIWorker {
                 .into())
             }
         }
+    }
+
+    pub fn cancel(&self) {
+        self.cancel_signal
+            .store(true, Ordering::SeqCst);
     }
 }

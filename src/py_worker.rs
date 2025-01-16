@@ -10,7 +10,6 @@ use crate::{
 };
 
 #[pyclass]
-#[derive(FromPyObject)]
 pub struct PythonWorker {
     #[pyo3(get)]
     pub window_id: usize,
@@ -27,7 +26,7 @@ pub struct PythonWorker {
     #[pyo3(get)]
     pub proxy: Option<String>,
 
-    cacher_path: String,
+    worker: OpenAIWorker,
 }
 
 #[pymethods]
@@ -40,14 +39,14 @@ impl PythonWorker {
             view_id: None,
             prompt_mode: None,
             contents: None,
-            cacher_path: path,
-            proxy,
+            proxy: proxy.clone(),
+            worker: OpenAIWorker::new(window_id, path, proxy),
         }
     }
 
     #[pyo3(signature = (view_id, prompt_mode, contents, assistant_settings, handler=None))]
     fn run(
-        &self,
+        &mut self,
         view_id: usize,
         prompt_mode: PythonPromptMode,
         contents: Vec<SublimeInputContent>,
@@ -56,21 +55,15 @@ impl PythonWorker {
     ) -> PyResult<()> {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
-            let mut worker = OpenAIWorker::new(
-                self.window_id,
-                self.cacher_path.clone(),
-                self.proxy.clone(),
-            );
-
             let handler = handler.map(|h| {
-                move |data: String| {
+                move |s| {
                     Python::with_gil(|py| {
-                        h.call1(py, (data,)).ok();
+                        h.call1(py, (s,)).ok();
                     });
                 }
             });
 
-            worker
+            self.worker
                 .run(
                     view_id,
                     contents,
@@ -82,6 +75,8 @@ impl PythonWorker {
         })
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
+
+    pub fn cancel(&mut self) { self.worker.cancel(); }
 }
 
 #[pyclass(eq, eq_int)]
@@ -89,6 +84,7 @@ impl PythonWorker {
 pub enum PythonPromptMode {
     #[strum(serialize = "view")]
     View,
+
     #[strum(serialize = "phantom")]
     Phantom,
 }

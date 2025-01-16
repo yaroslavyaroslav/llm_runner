@@ -1,4 +1,10 @@
-use std::error::Error;
+use std::{
+    error::Error,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 use futures_util::StreamExt;
 use reqwest::{
@@ -115,6 +121,7 @@ impl NetworkClient {
         &self,
         request: Request,
         sender: Option<mpsc::Sender<String>>,
+        cancel_flag: Arc<AtomicBool>,
     ) -> Result<T, Box<dyn Error>>
     where
         T: DeserializeOwned,
@@ -149,6 +156,7 @@ impl NetworkClient {
 
                             merge_json(&mut composable_response, &json_value);
 
+                            // TODO: To add "[ABORTED]" to history as well on break
                             if let Some(content) = obtain_delta(
                                 json_value
                                     .get("choices")
@@ -167,6 +175,12 @@ impl NetworkClient {
                                         eprintln!("Failed to send SSE data");
                                     }
                                 });
+                            }
+
+                            if cancel_flag.load(Ordering::SeqCst) {
+                                sender.send("\n[ABORTED]\n".to_string());
+                                sender.closed();
+                                break;
                             }
                         }
                     }
@@ -427,7 +441,11 @@ mod tests {
             .unwrap();
 
         let response: Result<TestResponse, _> = client
-            .execute_request(request, None)
+            .execute_request(
+                request,
+                None,
+                Arc::new(AtomicBool::new(false)),
+            )
             .await;
 
         assert_eq!(
@@ -499,7 +517,11 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(10);
 
         let result = client
-            .execute_request::<Map<String, Value>>(request, Some(tx))
+            .execute_request::<Map<String, Value>>(
+                request,
+                Some(tx),
+                Arc::new(AtomicBool::new(false)),
+            )
             .await;
 
         let mut events = vec![];
@@ -575,7 +597,11 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(10);
 
         let result = client
-            .execute_request::<Map<String, Value>>(request, Some(tx))
+            .execute_request::<Map<String, Value>>(
+                request,
+                Some(tx),
+                Arc::new(AtomicBool::new(false)),
+            )
             .await;
 
         let mut function_name = vec![];
@@ -671,7 +697,11 @@ mod tests {
             .unwrap();
 
         let result: Map<String, Value> = client
-            .execute_request::<Map<String, Value>>(request, None)
+            .execute_request::<Map<String, Value>>(
+                request,
+                None,
+                Arc::new(AtomicBool::new(false)),
+            )
             .await
             .unwrap();
 

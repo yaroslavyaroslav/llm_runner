@@ -9,7 +9,8 @@ use crate::{
     worker::OpenAIWorker,
 };
 
-#[pyclass]
+#[pyclass(name = "Worker")]
+#[derive(Clone, Debug)]
 pub struct PythonWorker {
     #[pyo3(get)]
     pub window_id: usize,
@@ -80,7 +81,7 @@ impl PythonWorker {
 }
 
 #[pyclass(eq, eq_int)]
-#[derive(EnumString, Display, Clone, Copy, PartialEq)]
+#[derive(EnumString, Display, Debug, Clone, Copy, PartialEq)]
 pub enum PythonPromptMode {
     #[strum(serialize = "view")]
     View,

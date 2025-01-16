@@ -1,4 +1,8 @@
-use std::{env, fs};
+use std::{
+    env,
+    fs,
+    sync::{Arc, Mutex},
+};
 
 use reqwest::header::CONTENT_TYPE;
 use rust_helper::{types::*, worker::*};
@@ -296,6 +300,66 @@ async fn test_remote_server_complerion() {
         "Expected Ok, got Err: {:?}",
         result
     );
+}
+
+#[test]
+#[ignore = "It's paid, so should be skipped by default"]
+async fn test_remote_server_complerion_cancelled() {
+    let tmp_dir = TempDir::new()
+        .unwrap()
+        .into_path()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let worker = OpenAIWorker::new(
+        1,
+        tmp_dir.clone(),
+        Some(PROXY.to_string()),
+    );
+
+    let mut assistant_settings = AssistantSettings::default();
+    assistant_settings.url = format!("https://api.openai.com/v1/chat/completions");
+    assistant_settings.token = env::var("OPENAI_API_TOKEN").ok();
+    assistant_settings.chat_model = "gpt-4o-mini".to_string();
+    assistant_settings.stream = true;
+
+    let prompt_mode = PromptMode::View;
+
+    let contents = SublimeInputContent {
+        content: Some("This is the test request, provide me 300 words response".to_string()),
+        path: Some("/path/to/file".to_string()),
+        scope: Some("text.plain".to_string()),
+        input_kind: InputKind::ViewSelection,
+    };
+
+    let output = Arc::new(Mutex::new(vec![]));
+    let output_clone = Arc::clone(&output);
+
+    let mut binding = worker.clone();
+    let future = binding.run(
+        1,
+        vec![contents],
+        prompt_mode,
+        assistant_settings,
+        Some(move |s| {
+            let mut output_guard = output_clone.lock().unwrap();
+            output_guard.push(s);
+        }),
+    );
+
+    worker.cancel();
+
+    let result = future.await;
+
+    let output_final = output.lock().unwrap();
+
+    assert!(
+        result.is_ok(),
+        "Expected Ok, got Err: {:?}",
+        result
+    );
+    assert!(output_final.contains(&"\n[ABORTED]".to_string()))
 }
 
 #[test]

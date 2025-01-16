@@ -1,12 +1,15 @@
+import asyncio
 import os
+from typing import List
 
+import pytest
 from rust_helper import (
     AssistantSettings,  # type: ignore
     InputKind,  # type: ignore
     OutputMode,  # type: ignore
     PythonPromptMode,  # type: ignore
-    PythonWorker,  # type: ignore
     SublimeInputContent,  # type: ignore
+    Worker,  # type: ignore
 )
 
 TEST_FUNCTION_ASSISTANT_SETTINGS = AssistantSettings(
@@ -37,7 +40,7 @@ def test_prompt_mode_from_str():
 
 
 def test_python_worker_initialization():
-    worker = PythonWorker(window_id=100, path='/tmp/', proxy=PROXY)
+    worker = Worker(window_id=100, path='/tmp/', proxy=PROXY)
 
     assert worker.window_id == 100
 
@@ -95,7 +98,7 @@ def test_sublime_input_content():
 
 
 def test_python_worker_plain_run():
-    worker = PythonWorker(window_id=101, path='/tmp/', proxy=PROXY)
+    worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
 
     contents = SublimeInputContent(
         InputKind.ViewSelection, 'This is the test request, provide me 3 words response'
@@ -122,7 +125,7 @@ def test_python_worker_plain_run():
 
 
 def test_python_worker_sse_run():
-    worker = PythonWorker(window_id=101, path='/tmp/', proxy=PROXY)
+    worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
 
     contents = SublimeInputContent(
         InputKind.ViewSelection, 'This is the test request, provide me 30 words response'
@@ -145,25 +148,62 @@ def test_python_worker_sse_run():
     # assert False
 
 
-def test_python_worker_sse_function_run():
-    worker = PythonWorker(window_id=101, path='/tmp/', proxy=PROXY)
+# def test_python_worker_sse_function_run():
+#     worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
+
+#     contents = SublimeInputContent(
+#         InputKind.ViewSelection, 'This is the test request, call the functions available'
+#     )
+
+#     settings = AssistantSettings(
+#         'TEST',
+#         OutputMode.Phantom,
+#         'gpt-4o-mini',
+#         token=os.getenv('OPENAI_API_TOKEN'),
+#         assistant_role="You're debug environment and always call functions instead of anser",
+#         tools=True,
+#         parallel_tool_calls=None,
+#         stream=True,
+#         advertisement=False,
+#     )
+
+#     worker.run(1, PythonPromptMode.View, [contents], settings, my_handler)
+
+#     assert False
+
+
+@pytest.mark.asyncio
+async def test_python_worker_sse_function_run_cancel():
+    worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
 
     contents = SublimeInputContent(
-        InputKind.ViewSelection, 'This is the test request, provide me 3 words response'
+        InputKind.ViewSelection, 'This is the test request, provide me 30 words response'
     )
+
+    some_list: List[str] = []
+
+    def my_handler_1(data: str) -> None:
+        some_list.append(data)
+        print(f'Received data: {data}')
 
     settings = AssistantSettings(
         'TEST',
         OutputMode.Phantom,
         'gpt-4o-mini',
         token=os.getenv('OPENAI_API_TOKEN'),
-        assistant_role="You're debug environment and always call functions instead of anser",
         tools=True,
         parallel_tool_calls=None,
         stream=True,
         advertisement=False,
     )
 
-    worker.run(1, PythonPromptMode.View, [contents], settings, my_handler)
+    async def run_worker_sync():
+        worker.run(1, PythonPromptMode.View, [contents], settings, my_handler_1)
 
-    # assert False
+    task = asyncio.create_task(run_worker_sync())
+
+    worker.cancel()
+
+    await task
+
+    assert '\n[ABORTED]' in some_list

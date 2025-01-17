@@ -1,3 +1,5 @@
+mod common;
+
 use std::{
     env,
     fs,
@@ -116,31 +118,7 @@ async fn test_run_tool_method_with_mock_server() {
     // Mock the API response
     let _mock = wiremock::Mock::given(method("POST"))
         .and(path(endpoint))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({
-                "model": "some_model",
-                "id": "some_id",
-                "created": 367123,
-                "choices": [{
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": null,
-                        "tool_calls": [{
-                            "id": "call_qZgF6u7aysFbuUdzV2z09vRW",
-                            "type": "function",
-                            "function": {
-                                "name": "create_file",
-                                "arguments": "{\"file_path\":\"my_new_file.txt\"}"
-                            }
-                        }],
-                        "refusal": null
-                    },
-                    "logprobs": null,
-                    "finish_reason": "tool_calls"
-                }]
-            })),
-        )
+        .respond_with(responder)
         .mount(&mock_server)
         .await;
 

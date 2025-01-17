@@ -1,6 +1,6 @@
 use std::{
     fs::{File, OpenOptions},
-    io::{BufRead, Write},
+    io::{self, BufRead, Write},
     path::Path,
 };
 
@@ -73,15 +73,17 @@ impl Cacher {
         }
     }
 
-    fn check_and_create(&self, path: &str) {
+    fn create_file_if_not_exists(&self, path: &str) -> io::Result<()> {
         if !Path::new(path).exists() {
-            File::create(path).unwrap();
+            File::create(path)?;
+            println!("File created successfully.");
         }
+        Ok(())
     }
 
     pub fn read_entries<T>(&self) -> Result<Vec<T>, SerdeError>
     where T: for<'de> Deserialize<'de> {
-        self.check_and_create(&self.history_file);
+        self.create_file_if_not_exists(&self.history_file);
 
         let file = match File::open(&self.history_file) {
             Ok(file) => file,
@@ -107,31 +109,48 @@ impl Cacher {
         Ok(entries)
     }
 
-    pub fn write_entry<T: Serialize>(&self, entry: &T) {
+    pub fn write_entry<T: Serialize>(&self, entry: &T) -> io::Result<()> {
+        let entry_json = serde_json::to_string(entry).map_err(|e| {
+            eprintln!("Error serializing entry: {}", e);
+            io::Error::new(
+                io::ErrorKind::Other,
+                "Serialization error",
+            )
+        })?;
+
         let mut file = OpenOptions::new()
             .append(true)
             .create(true)
-            .open(&self.history_file)
-            .unwrap();
+            .open(&self.history_file)?;
 
-        let entry_json = serde_json::to_string(entry).unwrap();
-        writeln!(file, "{}", entry_json).unwrap();
+        writeln!(file, "{}", entry_json).map_err(|e| {
+            eprintln!("Error writing to file: {}", e);
+            io::Error::new(io::ErrorKind::Other, "Write error")
+        })?;
+
+        Ok(())
     }
 
-    pub fn drop_first(&self, lines_num: usize) {
-        if let Ok(file) = File::open(&self.history_file) {
-            let reader = std::io::BufReader::new(file);
-            let remaining_lines: Vec<_> = reader
-                .lines()
-                .skip(lines_num)
-                .filter_map(Result::ok)
-                .collect();
+    pub fn drop_first(&self, lines_num: usize) -> io::Result<()> {
+        let file = File::open(&self.history_file)?;
 
-            let mut file = File::create(&self.history_file).unwrap();
-            for line in remaining_lines {
-                writeln!(file, "{}", line).unwrap();
-            }
+        let reader = std::io::BufReader::new(file);
+        let remaining_lines: Vec<_> = reader
+            .lines()
+            .skip(lines_num)
+            .filter_map(Result::ok)
+            .collect();
+
+        let mut file = File::create(&self.history_file)?;
+
+        for line in remaining_lines {
+            writeln!(file, "{}", line).map_err(|e| {
+                eprintln!("Error writing to file: {}", e);
+                io::Error::new(io::ErrorKind::Other, "Write error")
+            })?;
         }
+
+        Ok(())
     }
 }
 
@@ -176,8 +195,12 @@ mod tests {
             name: "Bob".to_string(),
         };
 
-        cacher.write_entry(&entry1);
-        cacher.write_entry(&entry2);
+        cacher
+            .write_entry(&entry1)
+            .ok();
+        cacher
+            .write_entry(&entry2)
+            .ok();
 
         let file = File::open(&cacher.history_file).unwrap();
         let reader = BufReader::new(file);
@@ -213,7 +236,9 @@ mod tests {
             tokens_count_file: "".to_string(),
         };
 
-        cacher.check_and_create(&cacher.history_file);
+        cacher
+            .create_file_if_not_exists(&cacher.history_file)
+            .ok();
 
         let read_entries: Vec<TestEntry> = cacher.read_entries().unwrap();
 

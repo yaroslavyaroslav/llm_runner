@@ -15,3 +15,7 @@ dynamic = ["version"]
 [tool.maturin]
 features = ["pyo3/extension-module"]
 python-test = true
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"  # or class, module, package, or session
+

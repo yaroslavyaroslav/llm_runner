@@ -15,7 +15,7 @@ use reqwest::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::Sender;
 
 use crate::{
     openai_network_types::OpenAICompletionRequest,
@@ -118,8 +118,9 @@ impl NetworkClient {
     pub async fn execute_request<T>(
         &self,
         request: Request,
-        sender: Option<mpsc::Sender<String>>,
+        sender: Sender<String>,
         cancel_flag: Arc<AtomicBool>,
+        stream: bool,
     ) -> Result<T, Box<dyn Error>>
     where
         T: DeserializeOwned,
@@ -131,7 +132,7 @@ impl NetworkClient {
 
         let mut composable_response = serde_json::json!({});
 
-        if let Some(sender) = sender {
+        if stream {
             if response.status().is_success() {
                 let mut stream = response.bytes_stream();
 
@@ -353,7 +354,7 @@ fn obtain_delta(map: &Map<String, Value>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use serde::{Deserialize, Serialize};
-    use tokio::test;
+    use tokio::{sync::mpsc, test};
     use wiremock::{
         matchers::{header, method},
         MockServer,
@@ -386,6 +387,7 @@ mod tests {
             path: None,
             scope: None,
             input_kind: InputKind::ViewSelection,
+            tool_id: None,
         }];
 
         let payload = client
@@ -429,6 +431,7 @@ mod tests {
         let client = NetworkClient::new(None);
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
+        settings.stream = false;
 
         let cache_entries = vec![];
         let sublime_inputs = vec![SublimeInputContent {
@@ -436,6 +439,7 @@ mod tests {
             path: None,
             scope: None,
             input_kind: InputKind::ViewSelection,
+            tool_id: None,
         }];
 
         let payload = client
@@ -447,14 +451,17 @@ mod tests {
             .unwrap();
 
         let request = client
-            .prepare_request(settings, payload)
+            .prepare_request(settings.clone(), payload)
             .unwrap();
+
+        let (tx, _) = mpsc::channel(10);
 
         let response: Result<TestResponse, _> = client
             .execute_request(
                 request,
-                None,
+                tx,
                 Arc::new(AtomicBool::new(false)),
+                settings.stream,
             )
             .await;
 
@@ -510,6 +517,7 @@ mod tests {
             path: None,
             scope: None,
             input_kind: InputKind::ViewSelection,
+            tool_id: None,
         }];
 
         let payload = client
@@ -521,7 +529,7 @@ mod tests {
             .unwrap();
 
         let request = client
-            .prepare_request(settings, payload)
+            .prepare_request(settings.clone(), payload)
             .unwrap();
 
         let (tx, mut rx) = mpsc::channel(10);
@@ -529,8 +537,9 @@ mod tests {
         let result = client
             .execute_request::<Map<String, Value>>(
                 request,
-                Some(tx),
+                tx,
                 Arc::new(AtomicBool::new(false)),
+                settings.stream,
             )
             .await;
 
@@ -601,7 +610,7 @@ mod tests {
 
         let payload = "dummy payload";
         let request = client
-            .prepare_request(settings, payload.to_string())
+            .prepare_request(settings.clone(), payload.to_string())
             .unwrap();
 
         let (tx, mut rx) = mpsc::channel(10);
@@ -609,8 +618,9 @@ mod tests {
         let result = client
             .execute_request::<Map<String, Value>>(
                 request,
-                Some(tx),
+                tx,
                 Arc::new(AtomicBool::new(false)),
+                settings.stream,
             )
             .await;
 
@@ -700,17 +710,21 @@ mod tests {
         let client = NetworkClient::new(None);
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
+        settings.stream = false;
 
         let payload = "dummy payload";
         let request = client
-            .prepare_request(settings, payload.to_string())
+            .prepare_request(settings.clone(), payload.to_string())
             .unwrap();
+
+        let (tx, _) = mpsc::channel(10);
 
         let result: Map<String, Value> = client
             .execute_request::<Map<String, Value>>(
                 request,
-                None,
+                tx,
                 Arc::new(AtomicBool::new(false)),
+                settings.stream,
             )
             .await
             .unwrap();
@@ -807,13 +821,18 @@ mod tests {
             let client = NetworkClient::new(None);
             let payload = "dummy payload";
             let request = client
-                .prepare_request(settings, payload.to_string())
+                .prepare_request(settings.clone(), payload.to_string())
                 .unwrap();
 
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
             let response = client
-                .execute_request::<Map<String, Value>>(request, Some(tx), cancel_flag_clone)
+                .execute_request::<Map<String, Value>>(
+                    request,
+                    tx,
+                    cancel_flag_clone,
+                    settings.stream,
+                )
                 .await;
 
             match response {

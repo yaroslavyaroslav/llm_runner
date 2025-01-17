@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 use crate::{
     cacher::Cacher,
     network_client::NetworkClient,
-    openai_network_types::{OpenAIResponse, Roles},
+    runner::LlmRunner,
     stream_handler::StreamHandler,
     types::{AssistantSettings, CacheEntry, PromptMode, SublimeInputContent},
 };
@@ -51,7 +51,7 @@ impl OpenAIWorker {
         contents: Vec<SublimeInputContent>,
         prompt_mode: PromptMode,
         assistant_settings: AssistantSettings,
-        handler: Option<F>,
+        handler: F,
     ) -> Result<(), Box<dyn Error>>
     where
         F: FnMut(String) + Send + 'static,
@@ -63,64 +63,25 @@ impl OpenAIWorker {
         let cacher = Cacher::new(&self.cacher_path, Some("name"));
         let provider = NetworkClient::new(self.proxy.clone());
 
-        let (tx, rx) = if assistant_settings.stream {
-            let (tx, rx) = mpsc::channel(32);
-            (Some(tx), Some(rx))
-        } else {
-            (None, None)
-        };
+        let (tx, rx) = mpsc::channel(32);
 
-        self.contents = contents;
-
-        // Read from cache and extend with new contents
-        let mut cache_entries: Vec<CacheEntry> = cacher.read_entries()?;
-        cache_entries.extend(
-            self.contents
-                .iter()
-                .map(|content| {
-                    CacheEntry {
-                        content: content.content.clone(),
-                        path: content.path.clone(),
-                        scope: content.scope.clone(),
-                        role: Roles::User,
-                        tool_call: None,
-                        tool_call_id: None,
-                    }
-                })
-                .collect::<Vec<_>>(),
-        );
-        for entry in &self.contents {
-            cacher.write_entry(&CacheEntry::from(entry.clone()));
-        }
-
-        let payload = provider
-            .prepare_payload(
-                assistant_settings.clone(),
-                cache_entries,
-                self.contents.clone(),
-            )
-            .map_err(|e| format!("Failed to prepare payload: {}", e))?;
-
-        let request = provider
-            .prepare_request(assistant_settings.clone(), payload)
-            .map_err(|e| format!("Failed to prepare request: {}", e))?;
-
-        let cloned_cancel_flag = Arc::clone(&self.cancel_signal);
-
-        // TODO: To make type to cast conditional to support various of protocols
-        let execute_response = provider
-            .execute_request::<OpenAIResponse>(request, tx, cloned_cancel_flag)
-            .await;
+        let execute_response = LlmRunner::execute(
+            provider,
+            &cacher,
+            contents,
+            assistant_settings,
+            tx,
+            Arc::clone(&self.cancel_signal),
+        )
+        .await;
 
         match execute_response {
             Ok(response) => {
-                if let Some(rx) = rx {
-                    let handler = handler.unwrap();
-                    let mut stream_handler = StreamHandler::new(rx);
-                    stream_handler
-                        .handle_stream_with(handler)
-                        .await;
-                }
+                let handler = handler;
+                let mut stream_handler = StreamHandler::new(rx);
+                stream_handler
+                    .handle_stream_with(handler)
+                    .await;
 
                 let message = response
                     .choices
@@ -131,8 +92,8 @@ impl OpenAIWorker {
                         "No choices found in the response",
                     ))?
                     .message;
-                cacher.write_entry(&CacheEntry::from(message));
-                Ok(())
+
+                Ok(cacher.write_entry(&CacheEntry::from(message))?)
             }
             Err(e) => {
                 Err(format!(

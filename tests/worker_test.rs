@@ -6,6 +6,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use common::mocks::SequentialResponder;
 use reqwest::header::CONTENT_TYPE;
 use rust_helper::{types::*, worker::*};
 use serde_json::json;
@@ -75,6 +76,7 @@ async fn test_run_chact_method_with_mock_server() {
         path: Some("/path/to/file".to_string()),
         scope: Some("text.plain".to_string()),
         input_kind: InputKind::ViewSelection,
+        tool_id: None,
     };
 
     let result = worker
@@ -83,7 +85,7 @@ async fn test_run_chact_method_with_mock_server() {
             vec![contents],
             prompt_mode,
             assistant_settings,
-            None::<fn(String)>,
+            |_| {},
         )
         .await;
 
@@ -96,6 +98,7 @@ async fn test_run_chact_method_with_mock_server() {
 }
 
 #[tokio::test]
+// #[ignore = "Broken because of required different second response from a server"]
 async fn test_run_tool_method_with_mock_server() {
     let tmp_dir = TempDir::new()
         .unwrap()
@@ -115,8 +118,9 @@ async fn test_run_tool_method_with_mock_server() {
 
     let endpoint = "/openai/endpoint";
 
-    // Mock the API response
-    let _mock = wiremock::Mock::given(method("POST"))
+    let responder = SequentialResponder::new();
+
+    wiremock::Mock::given(method("POST"))
         .and(path(endpoint))
         .respond_with(responder)
         .mount(&mock_server)
@@ -135,6 +139,7 @@ async fn test_run_tool_method_with_mock_server() {
         path: Some("/path/to/file".to_string()),
         scope: Some("text.plain".to_string()),
         input_kind: InputKind::ViewSelection,
+        tool_id: None,
     };
 
     let result = worker
@@ -143,7 +148,7 @@ async fn test_run_tool_method_with_mock_server() {
             vec![contents],
             prompt_mode,
             assistant_settings,
-            None::<fn(String)>,
+            |_| {},
         )
         .await;
 
@@ -212,6 +217,7 @@ async fn test_run_method_see_with_mock_server() {
         path: Some("/path/to/file".to_string()),
         scope: Some("text.plain".to_string()),
         input_kind: InputKind::ViewSelection,
+        tool_id: None,
     };
 
     let result = worker
@@ -220,7 +226,7 @@ async fn test_run_method_see_with_mock_server() {
             vec![contents],
             prompt_mode,
             assistant_settings,
-            Some(|_| {}),
+            |_| {},
         )
         .await;
 
@@ -261,6 +267,7 @@ async fn test_remote_server_complerion() {
         path: Some("/path/to/file".to_string()),
         scope: Some("text.plain".to_string()),
         input_kind: InputKind::ViewSelection,
+        tool_id: None,
     };
 
     let result = worker
@@ -269,7 +276,7 @@ async fn test_remote_server_complerion() {
             vec![contents],
             prompt_mode,
             assistant_settings,
-            Some(|_| {}),
+            |_| {},
         )
         .await;
 
@@ -309,6 +316,7 @@ async fn test_remote_server_complerion_cancelled() {
         path: Some("/path/to/file".to_string()),
         scope: Some("text.plain".to_string()),
         input_kind: InputKind::ViewSelection,
+        tool_id: None,
     };
 
     let output = Arc::new(Mutex::new(vec![]));
@@ -320,10 +328,10 @@ async fn test_remote_server_complerion_cancelled() {
         vec![contents],
         prompt_mode,
         assistant_settings,
-        Some(move |s| {
+        move |s| {
             let mut output_guard = output_clone.lock().unwrap();
             output_guard.push(s);
-        }),
+        },
     );
 
     worker.cancel();
@@ -366,10 +374,13 @@ async fn test_remote_server_fucntion_call() {
     let prompt_mode = PromptMode::View;
 
     let contents = SublimeInputContent {
-        content: Some("You're debug environment and always call functions instead of anser".to_string()),
+        content: Some(
+            "You're debug environment and call functions instead of answer, but ONLY ONCE".to_string(),
+        ),
         path: Some("/path/to/file".to_string()),
         scope: Some("text.plain".to_string()),
         input_kind: InputKind::ViewSelection,
+        tool_id: None,
     };
 
     let result = worker
@@ -378,7 +389,7 @@ async fn test_remote_server_fucntion_call() {
             vec![contents],
             prompt_mode,
             assistant_settings,
-            Some(|_| {}), // None::<fn(String)>,
+            |_| {}, // None::<fn(String)>,
         )
         .await;
 

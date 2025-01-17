@@ -116,12 +116,7 @@ def test_python_worker_plain_run():
         advertisement=False,
     )
 
-    worker.run(
-        1,
-        PythonPromptMode.View,
-        [contents],
-        settings,
-    )
+    worker.run(1, PythonPromptMode.View, [contents], settings, my_handler)
 
 
 def test_python_worker_sse_run():
@@ -148,28 +143,26 @@ def test_python_worker_sse_run():
     # assert False
 
 
-# def test_python_worker_sse_function_run():
-#     worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
+def test_python_worker_sse_function_run():
+    worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
 
-#     contents = SublimeInputContent(
-#         InputKind.ViewSelection, 'This is the test request, call the functions available'
-#     )
+    contents = SublimeInputContent(
+        InputKind.ViewSelection, 'This is the test request, call the functions available'
+    )
 
-#     settings = AssistantSettings(
-#         'TEST',
-#         OutputMode.Phantom,
-#         'gpt-4o-mini',
-#         token=os.getenv('OPENAI_API_TOKEN'),
-#         assistant_role="You're debug environment and always call functions instead of anser",
-#         tools=True,
-#         parallel_tool_calls=None,
-#         stream=True,
-#         advertisement=False,
-#     )
+    settings = AssistantSettings(
+        'TEST',
+        OutputMode.Phantom,
+        'gpt-4o-mini',
+        token=os.getenv('OPENAI_API_TOKEN'),
+        assistant_role="You're debug environment and call functions instead of answer, but ONLY ONCE",
+        tools=True,
+        parallel_tool_calls=None,
+        stream=True,
+        advertisement=False,
+    )
 
-#     worker.run(1, PythonPromptMode.View, [contents], settings, my_handler)
-
-#     assert False
+    worker.run(1, PythonPromptMode.View, [contents], settings, my_handler)
 
 
 @pytest.mark.asyncio

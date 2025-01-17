@@ -45,36 +45,36 @@ impl PythonWorker {
         }
     }
 
-    #[pyo3(signature = (view_id, prompt_mode, contents, assistant_settings, handler=None))]
+    #[pyo3(signature = (view_id, prompt_mode, contents, assistant_settings, handler))]
     fn run(
         &mut self,
         view_id: usize,
         prompt_mode: PythonPromptMode,
         contents: Vec<SublimeInputContent>,
         assistant_settings: AssistantSettings,
-        handler: Option<PyObject>,
+        handler: PyObject,
     ) -> PyResult<()> {
-        let rt = Runtime::new().unwrap();
-        rt.block_on(async {
-            let handler = handler.map(|h| {
-                move |s| {
-                    Python::with_gil(|py| {
-                        h.call1(py, (s,)).ok();
-                    });
-                }
-            });
+        Runtime::new()?
+            .block_on(async {
+                let handler = {
+                    move |s: String| {
+                        Python::with_gil(|py| {
+                            handler.call1(py, (s,)).ok();
+                        });
+                    }
+                };
 
-            self.worker
-                .run(
-                    view_id,
-                    contents,
-                    PromptMode::from(prompt_mode),
-                    assistant_settings,
-                    handler,
-                )
-                .await
-        })
-        .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+                self.worker
+                    .run(
+                        view_id,
+                        contents,
+                        PromptMode::from(prompt_mode),
+                        assistant_settings,
+                        handler,
+                    )
+                    .await
+            })
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
     pub fn cancel(&mut self) { self.worker.cancel(); }

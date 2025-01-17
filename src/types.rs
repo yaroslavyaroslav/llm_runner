@@ -39,9 +39,9 @@ impl From<SublimeInputContent> for CacheEntry {
             content: content.content,
             path: content.path,
             scope: content.scope,
-            role: Roles::User,
+            role: if content.tool_id.is_some() { Roles::Tool } else { Roles::User },
             tool_call: None,
-            tool_call_id: None,
+            tool_call_id: content.tool_id,
         }
     }
 }
@@ -52,13 +52,14 @@ impl From<AssistantMessage> for CacheEntry {
             .tool_calls
             .as_ref()
             .and_then(|calls| calls.first().cloned());
+
         CacheEntry {
             content: content.content,
             path: None,
             scope: None,
             role: content.role,
-            tool_call: first_tool_call,
-            tool_call_id: None,
+            tool_call: first_tool_call.clone(),
+            tool_call_id: first_tool_call.map(|t| t.id),
         }
     }
 }
@@ -72,6 +73,7 @@ pub enum InputKind {
     BuildOutputPanel,
     LspOutputPanel,
     Terminus,
+    FunctionResult,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -88,6 +90,8 @@ pub struct SublimeInputContent {
 
     #[pyo3(get)]
     pub input_kind: InputKind,
+
+    pub tool_id: Option<String>,
 }
 
 #[pymethods]
@@ -105,6 +109,7 @@ impl SublimeInputContent {
             path,
             scope,
             input_kind,
+            tool_id: None,
         }
     }
 }

@@ -69,46 +69,20 @@ impl OpenAICompletionRequest {
                     system_message
                 }
             };
-            messages.push(OpenAIMessage {
-                content: vec![MessageContent::from_text(content)].into(),
-                role: Roles::System,
-                tool_call_id: None,
-                name: None,
-                tool_calls: None,
-            });
+            messages.push(OpenAIMessage::from_system(content));
         }
 
-        for cache_entry in cache_entries {
-            if let Some(content) = cache_entry.content {
-                messages.push(OpenAIMessage {
-                    content: vec![MessageContent::from_text(content)].into(),
-                    role: cache_entry.role,
-                    tool_call_id: cache_entry.tool_call_id,
-                    name: None,
-                    tool_calls: None,
-                });
-            } else if let Some(tool_call) = cache_entry.tool_call {
-                messages.push(OpenAIMessage {
-                    content: None,
-                    role: cache_entry.role,
-                    tool_call_id: Some(tool_call.clone().id),
-                    name: None,
-                    tool_calls: Some(vec![tool_call]),
-                });
-            }
-        }
+        messages.extend(
+            cache_entries
+                .into_iter()
+                .map(OpenAIMessage::from),
+        );
 
-        for sublime_input in sublime_inputs {
-            if let Some(content) = sublime_input.content {
-                messages.push(OpenAIMessage {
-                    content: vec![MessageContent::from_text(content)].into(),
-                    role: Roles::User,
-                    tool_call_id: None,
-                    name: None,
-                    tool_calls: None,
-                });
-            }
-        }
+        messages.extend(
+            sublime_inputs
+                .into_iter()
+                .map(OpenAIMessage::from),
+        );
 
         OpenAICompletionRequest {
             messages,
@@ -162,6 +136,48 @@ pub struct OpenAIMessage {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) name: Option<String>,
+}
+
+impl OpenAIMessage {
+    pub(crate) fn from_system(value: String) -> Self {
+        OpenAIMessage {
+            content: vec![MessageContent::from_text(value)].into(),
+            role: Roles::System,
+            tool_call_id: None,
+            name: None,
+            tool_calls: None,
+        }
+    }
+}
+
+impl From<CacheEntry> for OpenAIMessage {
+    fn from(value: CacheEntry) -> Self {
+        OpenAIMessage {
+            content: value
+                .content
+                .map(|c| vec![MessageContent::from_text(c)]),
+            role: value.role,
+            tool_call_id: value.tool_call_id,
+            name: None,
+            tool_calls: value
+                .tool_call
+                .map(|t| vec![t]),
+        }
+    }
+}
+
+impl From<SublimeInputContent> for OpenAIMessage {
+    fn from(value: SublimeInputContent) -> Self {
+        Self {
+            content: value
+                .content
+                .map(|c| vec![MessageContent::from_text(c)]),
+            role: if value.tool_id.is_some() { Roles::Tool } else { Roles::User },
+            tool_call_id: value.tool_id,
+            name: None,
+            tool_calls: None,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -288,7 +304,7 @@ pub struct FunctionToCall {
 
 // --- Response ---
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub(crate) struct OpenAIResponse {
     pub(crate) id: Option<String>,
     pub(crate) object: Option<String>,

@@ -1,8 +1,5 @@
-// use std::collections::HashMap;
-
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use strum_macros::{Display, EnumString};
-use tokio::runtime::Runtime;
 
 use crate::{
     types::{AssistantSettings, PromptMode, SublimeInputContent},
@@ -16,15 +13,6 @@ pub struct PythonWorker {
     pub window_id: usize,
 
     #[pyo3(get)]
-    pub view_id: Option<usize>,
-
-    #[pyo3(get)]
-    pub prompt_mode: Option<PythonPromptMode>,
-
-    #[pyo3(get)]
-    pub contents: Option<String>,
-
-    #[pyo3(get)]
     pub proxy: Option<String>,
 
     worker: OpenAIWorker,
@@ -33,13 +21,10 @@ pub struct PythonWorker {
 #[pymethods]
 impl PythonWorker {
     #[new]
-    #[pyo3(signature = (window_id, path, proxy=None))]
-    fn new(window_id: usize, path: String, proxy: Option<String>) -> Self {
+    #[pyo3(signature = (window_id, path=None, proxy=None))]
+    fn new(window_id: usize, path: Option<String>, proxy: Option<String>) -> Self {
         PythonWorker {
             window_id,
-            view_id: None,
-            prompt_mode: None,
-            contents: None,
             proxy: proxy.clone(),
             worker: OpenAIWorker::new(window_id, path, proxy),
         }

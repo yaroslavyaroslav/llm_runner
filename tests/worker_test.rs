@@ -31,7 +31,7 @@ async fn test_run_chact_method_with_mock_server() {
 
     let mut worker = OpenAIWorker::new(
         1,
-        tmp_dir.clone(),
+        Some(tmp_dir.clone()),
         Some(PROXY.to_string()),
     );
 
@@ -108,7 +108,7 @@ async fn test_run_tool_method_with_mock_server() {
 
     let mut worker = OpenAIWorker::new(
         1,
-        tmp_dir.clone(),
+        Some(tmp_dir.clone()),
         Some(PROXY.to_string()),
     );
 
@@ -170,7 +170,7 @@ async fn test_run_method_see_with_mock_server() {
 
     let mut worker = OpenAIWorker::new(
         1,
-        tmp_dir.clone(),
+        Some(tmp_dir.clone()),
         Some(PROXY.to_string()),
     );
 
@@ -249,7 +249,7 @@ async fn test_remote_server_completion() {
 
     let mut worker = OpenAIWorker::new(
         1,
-        tmp_dir.clone(),
+        Some(tmp_dir.clone()),
         Some(PROXY.to_string()),
     );
 
@@ -298,7 +298,7 @@ async fn test_remote_server_complerion_cancelled() {
 
     let worker = OpenAIWorker::new(
         1,
-        tmp_dir.clone(),
+        Some(tmp_dir.clone()),
         Some(PROXY.to_string()),
     );
 
@@ -359,7 +359,7 @@ async fn test_remote_server_fucntion_call() {
 
     let mut worker = OpenAIWorker::new(
         1,
-        tmp_dir.clone(),
+        Some(tmp_dir.clone()),
         Some(PROXY.to_string()),
     );
 

@@ -20,8 +20,9 @@ pub struct Cacher {
 
 #[allow(unused)]
 impl Cacher {
-    pub fn new(subl_cache_path: &str, name: Option<&str>) -> Self {
-        let cache_dir = subl_cache_path.to_string();
+    pub fn new(name: Option<&str>) -> Self {
+        let cache_dir =
+            sublime_python::get_sublime_cache().unwrap_or("~/Library/Caches/Sublime Text/Cache".to_string());
 
         use std::path::{Path, PathBuf};
 
@@ -45,7 +46,6 @@ impl Cacher {
             } else {
                 let name_prefix = format!("{}_", input);
                 (
-                    // cache_dir.clone(),
                     format!(
                         "{}/{}chat_history.json",
                         cache_dir, name_prefix
@@ -62,7 +62,6 @@ impl Cacher {
             }
         } else {
             (
-                // cache_dir.clone(),
                 format!("{}/chat_history.json", cache_dir),
                 format!("{}/current_assistant.json", cache_dir),
                 format!("{}/tokens_count.json", cache_dir),

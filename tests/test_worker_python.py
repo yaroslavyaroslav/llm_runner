@@ -30,7 +30,7 @@ def test_prompt_mode_from_str():
 
 
 def test_python_worker_initialization():
-    worker = Worker(window_id=100, path='/tmp/', proxy=PROXY)
+    worker = Worker(window_id=100)
 
     assert worker.window_id == 100
 

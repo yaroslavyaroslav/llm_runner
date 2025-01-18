@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use strum_macros::{Display, EnumString};
+use tokio::runtime::Runtime;
 
 use crate::{
     types::{AssistantSettings, PromptMode, SublimeInputContent},
@@ -16,6 +19,23 @@ pub struct PythonWorker {
     pub proxy: Option<String>,
 
     worker: OpenAIWorker,
+}
+
+struct Function {
+    pub(crate) func: Arc<dyn Fn(String) + Send + Sync + 'static>, // Use a boxable trait object
+}
+
+impl Function {
+    // Constructor to create a new Function from a PyObject
+    fn new(obj: PyObject) -> Self {
+        let func = Arc::new(move |s: String| {
+            Python::with_gil(|py| {
+                let _ = obj.call1(py, (s,)); // Call the Python callable
+            });
+        });
+
+        Function { func } // Return an instance of Function
+    }
 }
 
 #[pymethods]
@@ -41,21 +61,13 @@ impl PythonWorker {
     ) -> PyResult<()> {
         Runtime::new()?
             .block_on(async {
-                let handler = {
-                    move |s: String| {
-                        Python::with_gil(|py| {
-                            handler.call1(py, (s,)).ok();
-                        });
-                    }
-                };
-
                 self.worker
                     .run(
                         view_id,
                         contents,
                         PromptMode::from(prompt_mode),
                         assistant_settings,
-                        handler,
+                        Function::new(handler).func,
                     )
                     .await
             })
@@ -115,5 +127,16 @@ impl PythonPromptMode {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_sync_and_send() {
+        fn is_sync<T: Sync>() {}
+        fn is_send<T: Send>() {}
+
+        is_sync::<PythonWorker>();
+        is_send::<PythonWorker>();
+        is_send::<PyObject>();
+    }
     // This code tested on Python's side
 }

@@ -241,3 +241,32 @@ pub enum OutputMode {
     Panel,
     Phantom,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_sync() {
+        fn is_sync<T: Sync>() {}
+
+        is_sync::<OutputMode>();
+        is_sync::<AssistantSettings>();
+        is_sync::<SublimeInputContent>();
+        is_sync::<InputKind>();
+        is_sync::<CacheEntry>();
+        is_sync::<PromptMode>();
+    }
+
+    #[test]
+    fn test_is_send() {
+        fn is_send<T: Send>() {}
+
+        is_send::<OutputMode>();
+        is_send::<AssistantSettings>();
+        is_send::<SublimeInputContent>();
+        is_send::<InputKind>();
+        is_send::<CacheEntry>();
+        is_send::<PromptMode>();
+    }
+}

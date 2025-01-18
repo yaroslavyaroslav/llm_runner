@@ -29,11 +29,7 @@ async fn test_run_chact_method_with_mock_server() {
         .unwrap()
         .to_string();
 
-    let mut worker = OpenAIWorker::new(
-        1,
-        Some(tmp_dir.clone()),
-        Some(PROXY.to_string()),
-    );
+    let mut worker = OpenAIWorker::new(1, Some(tmp_dir.clone()), None);
 
     // Start a mock server
     let mock_server = MockServer::start().await;
@@ -85,7 +81,7 @@ async fn test_run_chact_method_with_mock_server() {
             vec![contents],
             prompt_mode,
             assistant_settings,
-            |_| {},
+            Arc::new(|_| {}),
         )
         .await;
 
@@ -106,11 +102,7 @@ async fn test_run_tool_method_with_mock_server() {
         .unwrap()
         .to_string();
 
-    let mut worker = OpenAIWorker::new(
-        1,
-        Some(tmp_dir.clone()),
-        Some(PROXY.to_string()),
-    );
+    let mut worker = OpenAIWorker::new(1, Some(tmp_dir.clone()), None);
 
     // Start a mock server
     let mock_server = MockServer::start().await;
@@ -147,7 +139,7 @@ async fn test_run_tool_method_with_mock_server() {
             vec![contents],
             prompt_mode,
             assistant_settings,
-            |_| {},
+            Arc::new(|_| {}),
         )
         .await;
 
@@ -168,11 +160,7 @@ async fn test_run_method_see_with_mock_server() {
         .unwrap()
         .to_string();
 
-    let mut worker = OpenAIWorker::new(
-        1,
-        Some(tmp_dir.clone()),
-        Some(PROXY.to_string()),
-    );
+    let mut worker = OpenAIWorker::new(1, Some(tmp_dir.clone()), None);
 
     // Start a mock server
     let mock_server = MockServer::start().await;
@@ -225,7 +213,7 @@ async fn test_run_method_see_with_mock_server() {
             vec![contents],
             prompt_mode,
             assistant_settings,
-            |_| {},
+            Arc::new(|_| {}),
         )
         .await;
 
@@ -275,7 +263,7 @@ async fn test_remote_server_completion() {
             vec![contents],
             prompt_mode,
             assistant_settings,
-            |_| {},
+            Arc::new(|_| {}),
         )
         .await;
 
@@ -327,10 +315,10 @@ async fn test_remote_server_complerion_cancelled() {
         vec![contents],
         prompt_mode,
         assistant_settings,
-        move |s| {
+        Arc::new(move |s| {
             let mut output_guard = output_clone.lock().unwrap();
             output_guard.push(s);
-        },
+        }),
     );
 
     worker.cancel();
@@ -388,7 +376,7 @@ async fn test_remote_server_fucntion_call() {
             vec![contents],
             prompt_mode,
             assistant_settings,
-            |_| {}, // None::<fn(String)>,
+            Arc::new(|_| {}),
         )
         .await;
 

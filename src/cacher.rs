@@ -175,6 +175,15 @@ mod tests {
     }
 
     #[test]
+    fn test_is_sync_and_send() {
+        fn is_sync<T: Sync>() {}
+        fn is_send<T: Send>() {}
+
+        is_sync::<Cacher>();
+        is_send::<Cacher>();
+    }
+
+    #[test]
     fn test_write_and_read_entries() {
         let temp_dir = TempDir::new().unwrap();
         let history_path = temp_dir

@@ -123,3 +123,17 @@ impl LlmRunner {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_sync_and_send() {
+        fn is_sync<T: Sync>() {}
+        fn is_send<T: Send>() {}
+
+        is_sync::<LlmRunner>();
+        is_send::<LlmRunner>();
+    }
+}

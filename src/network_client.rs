@@ -378,6 +378,18 @@ mod tests {
     }
 
     #[test]
+    async fn test_is_sync_and_send() {
+        fn is_sync<T: Sync>() {}
+        fn is_send<T: Send>() {}
+
+        is_sync::<OpenAIErrors>();
+        is_send::<OpenAIErrors>();
+
+        is_sync::<NetworkClient>();
+        is_send::<NetworkClient>();
+    }
+
+    #[test]
     async fn test_prepare_payload() {
         let client = NetworkClient::new(None);
         let settings = AssistantSettings::default();

@@ -390,6 +390,50 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_is_sync() {
+        fn is_sync<T: Sync>() {}
+
+        is_sync::<Function>();
+        is_sync::<ToolCall>();
+        is_sync::<AssistantMessage>();
+        is_sync::<Choice>();
+        is_sync::<OpenAIResponse>();
+        is_sync::<FunctionToCall>();
+        is_sync::<Tool>();
+        is_sync::<OpenAIMessageType>();
+        is_sync::<Roles>();
+        is_sync::<AudioContent>();
+        is_sync::<ImageContent>();
+        is_sync::<ContentWrapper>();
+        is_sync::<MessageContent>();
+        is_sync::<OpenAIMessage>();
+        is_sync::<OpenAICompletionRequest>();
+        is_sync::<OpenAICompletionRequest>();
+    }
+
+    #[test]
+    fn test_is_send() {
+        fn is_send<T: Send>() {}
+
+        is_send::<Function>();
+        is_send::<ToolCall>();
+        is_send::<AssistantMessage>();
+        is_send::<Choice>();
+        is_send::<OpenAIResponse>();
+        is_send::<FunctionToCall>();
+        is_send::<Tool>();
+        is_send::<OpenAIMessageType>();
+        is_send::<Roles>();
+        is_send::<AudioContent>();
+        is_send::<ImageContent>();
+        is_send::<ContentWrapper>();
+        is_send::<MessageContent>();
+        is_send::<OpenAIMessage>();
+        is_send::<OpenAICompletionRequest>();
+        is_send::<OpenAICompletionRequest>();
+    }
+
+    #[test]
     fn test_openai_request_serialization_simple() {
         let request = OpenAICompletionRequest {
             messages: vec![OpenAIMessage {

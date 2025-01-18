@@ -1,9 +1,6 @@
-use std::{
-    error::Error,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
 };
 
 use anyhow::Result;
@@ -46,17 +43,14 @@ impl OpenAIWorker {
         }
     }
 
-    pub async fn run<F>(
+    pub async fn run(
         &mut self,
         view_id: usize,
         contents: Vec<SublimeInputContent>,
         prompt_mode: PromptMode,
         assistant_settings: AssistantSettings,
-        handler: F,
-    ) -> Result<()>
-    where
-        F: FnMut(String) + Send + 'static,
-    {
+        handler: Arc<dyn Fn(String) + Send + Sync + 'static>,
+    ) -> Result<()> {
         // Update instance variables
         self.view_id = Some(view_id);
         self.prompt_mode = Some(prompt_mode);
@@ -82,11 +76,9 @@ impl OpenAIWorker {
 
         match execute_response {
             Ok(response) => {
-                let handler = handler;
-                let mut stream_handler = StreamHandler::new(rx);
-                stream_handler
-                    .handle_stream_with(handler)
-                    .await;
+                let handler = handler.to_owned();
+
+                StreamHandler::handle_stream_with(rx, handler).await;
 
                 let message = response
                     .choices
@@ -113,5 +105,19 @@ impl OpenAIWorker {
     pub fn cancel(&self) {
         self.cancel_signal
             .store(true, Ordering::SeqCst);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_sync_and_send() {
+        fn is_sync<T: Sync>() {}
+        fn is_send<T: Send>() {}
+
+        is_sync::<OpenAIWorker>();
+        is_send::<OpenAIWorker>();
     }
 }

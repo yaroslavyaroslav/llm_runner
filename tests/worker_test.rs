@@ -98,7 +98,6 @@ async fn test_run_chact_method_with_mock_server() {
 }
 
 #[tokio::test]
-// #[ignore = "Broken because of required different second response from a server"]
 async fn test_run_tool_method_with_mock_server() {
     let tmp_dir = TempDir::new()
         .unwrap()

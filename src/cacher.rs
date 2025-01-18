@@ -4,8 +4,11 @@ use std::{
     path::Path,
 };
 
+use anyhow::Result;
 use serde::{de::Error, Deserialize, Serialize};
 use serde_json::Error as SerdeError;
+
+use crate::sublime_python;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -73,7 +76,7 @@ impl Cacher {
         }
     }
 
-    fn create_file_if_not_exists(&self, path: &str) -> io::Result<()> {
+    fn create_file_if_not_exists(&self, path: &str) -> Result<()> {
         if !Path::new(path).exists() {
             File::create(path)?;
             println!("File created successfully.");
@@ -109,7 +112,7 @@ impl Cacher {
         Ok(entries)
     }
 
-    pub fn write_entry<T: Serialize>(&self, entry: &T) -> io::Result<()> {
+    pub fn write_entry<T: Serialize>(&self, entry: &T) -> Result<()> {
         let entry_json = serde_json::to_string(entry).map_err(|e| {
             eprintln!("Error serializing entry: {}", e);
             io::Error::new(
@@ -131,7 +134,7 @@ impl Cacher {
         Ok(())
     }
 
-    pub fn drop_first(&self, lines_num: usize) -> io::Result<()> {
+    pub fn drop_first(&self, lines_num: usize) -> Result<()> {
         let file = File::open(&self.history_file)?;
 
         let reader = std::io::BufReader::new(file);

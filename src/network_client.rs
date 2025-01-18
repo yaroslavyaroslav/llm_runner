@@ -6,6 +6,7 @@ use std::{
     },
 };
 
+use anyhow::Result;
 use futures_util::StreamExt;
 use reqwest::{
     header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE},

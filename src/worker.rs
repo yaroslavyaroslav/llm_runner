@@ -6,6 +6,7 @@ use std::{
     },
 };
 
+use anyhow::Result;
 use tokio::sync::mpsc;
 
 use crate::{
@@ -52,7 +53,7 @@ impl OpenAIWorker {
         prompt_mode: PromptMode,
         assistant_settings: AssistantSettings,
         handler: F,
-    ) -> Result<(), Box<dyn Error>>
+    ) -> Result<()>
     where
         F: FnMut(String) + Send + 'static,
     {
@@ -100,10 +101,10 @@ impl OpenAIWorker {
                 Ok(cacher.write_entry(&CacheEntry::from(message))?)
             }
             Err(e) => {
-                Err(format!(
+                Err(anyhow::anyhow!(format!(
                     "Failed to execute network request: {}",
                     e
-                )
+                ))
                 .into())
             }
         }

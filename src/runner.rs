@@ -4,6 +4,7 @@ use std::{
     sync::{atomic::AtomicBool, Arc},
 };
 
+use anyhow::Result;
 use tokio::sync::mpsc::Sender;
 
 use crate::{

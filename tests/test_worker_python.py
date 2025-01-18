@@ -12,16 +12,6 @@ from rust_helper import (
     Worker,  # type: ignore
 )
 
-TEST_FUNCTION_ASSISTANT_SETTINGS = AssistantSettings(
-    'TEST',
-    OutputMode.Phantom,
-    'gpt-4o-mini',
-    token=os.getenv('OPENAI_API_TOKEN'),
-    assistant_role="You're debug environment and always call functions instead of anser",
-    tools=True,
-    parallel_tool_calls=False,
-    advertisement=False,
-)
 
 PROXY = '192.168.1.115:9090'
 
@@ -118,6 +108,8 @@ def test_python_worker_plain_run():
 
     worker.run(1, PythonPromptMode.View, [contents], settings, my_handler)
 
+    # assert False
+
 
 def test_python_worker_sse_run():
     worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
@@ -163,6 +155,8 @@ def test_python_worker_sse_function_run():
     )
 
     worker.run(1, PythonPromptMode.View, [contents], settings, my_handler)
+
+    # assert False
 
 
 @pytest.mark.asyncio

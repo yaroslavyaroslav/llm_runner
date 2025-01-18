@@ -1315,6 +1315,7 @@ dependencies = [
 name = "rust_helper"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "futures-util",
  "once_cell",
  "pyo3",

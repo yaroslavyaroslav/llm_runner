@@ -240,7 +240,7 @@ async fn test_run_method_see_with_mock_server() {
 
 #[test]
 #[ignore = "It's paid, so should be skipped by default"]
-async fn test_remote_server_complerion() {
+async fn test_remote_server_completion() {
     let tmp_dir = TempDir::new()
         .unwrap()
         .into_path()

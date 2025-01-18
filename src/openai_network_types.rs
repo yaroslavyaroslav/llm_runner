@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::{
-    tools_definition::CREATE_FILE,
+    tools_definition::FUNCTIONS,
     types::{AssistantSettings, CacheEntry, SublimeInputContent},
 };
 
@@ -105,7 +105,12 @@ impl OpenAICompletionRequest {
                 .tools
                 .unwrap_or(false)
             {
-                Some(vec![CREATE_FILE.clone()])
+                Some(
+                    FUNCTIONS
+                        .iter()
+                        .map(|tool| tool.as_ref().clone())
+                        .collect::<Vec<Tool>>(),
+                )
             } else {
                 None
             },

@@ -1,5 +1,6 @@
 use std::{
     error::Error,
+    str::FromStr,
     sync::{atomic::AtomicBool, Arc},
 };
 
@@ -9,6 +10,7 @@ use crate::{
     cacher::Cacher,
     network_client::NetworkClient,
     openai_network_types::{OpenAIResponse, ToolCall},
+    tools_definition::FunctionName,
     types::{AssistantSettings, CacheEntry, InputKind, SublimeInputContent},
 };
 
@@ -92,23 +94,31 @@ impl LlmRunner {
     }
 
     fn handle_function_call(tool_call: ToolCall) -> Vec<SublimeInputContent> {
-        let _name = tool_call
-            .clone()
-            .function
-            .name;
+        vec![LlmRunner::pick_function(tool_call)]
+    }
 
-        let _arguments = tool_call
-            .function
-            .get_arguments_map();
+    fn pick_function(tool: ToolCall) -> SublimeInputContent {
+        let content = match FunctionName::from_str(tool.function.name.as_str()) {
+            Ok(FunctionName::CreateFile) => Some("File created".to_string()),
+            Ok(FunctionName::ReadRegionContent) => {
+                Some("This is test content that have been read".to_string())
+            }
+            Ok(FunctionName::GetWorkingDirectoryContent) => {
+                Some("This will be the working directory content provided".to_string())
+            }
+            Ok(FunctionName::ReplaceTextWithAnotherText) => Some("Text successfully replaced".to_string()),
+            Ok(FunctionName::ReplaceTextForWholeFile) => {
+                Some("The whole file content successfully replaced".to_string())
+            }
+            Err(_) => Some("Function unknown".to_string()),
+        };
 
-        let id = tool_call.id;
-
-        vec![SublimeInputContent {
-            content: Some("created".to_string()),
+        SublimeInputContent {
+            content,
+            input_kind: InputKind::FunctionResult,
+            tool_id: Some(tool.id),
             path: None,
             scope: None,
-            input_kind: InputKind::FunctionResult,
-            tool_id: Some(id),
-        }]
+        }
     }
 }

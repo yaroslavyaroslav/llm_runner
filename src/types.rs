@@ -1,344 +1,276 @@
+use pyo3::{pyclass, pymethods};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use strum_macros::{Display, EnumString};
+
+use crate::openai_network_types::{AssistantMessage, Roles, ToolCall};
+
+#[allow(unused)]
+#[derive(Clone, Copy, Debug)]
+pub enum PromptMode {
+    View,
+    Phantom,
+    // OutputPanel, // TODO: review is it necessary
+}
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
-pub enum OpenAIMessageType {
-    Text,
-    ImageUrl,
-    InputAudio,
+pub(crate) struct CacheEntry {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) content: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) path: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) scope: Option<String>,
+
+    pub(crate) role: Roles,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tool_call: Option<ToolCall>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tool_call_id: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum Roles {
-    User,
-    Assistant,
-    Tool,
-    System,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Content {
-    pub scope_name: Option<String>,
-    pub path: Option<String>,
-    pub content: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct OpenAIMessage {
-    pub content: Vec<MessageContent>,
-    pub role: Roles,
-    pub path: Option<String>,
-    pub scope_name: Option<String>,
-    pub tool_call_id: Option<String>,
-    pub name: Option<String>,
-}
-
-impl OpenAIMessage {
-    pub fn from_content(content: Vec<Content>) -> Self {
-        let contents = content
-            .iter()
-            .map(|item| MessageContent {
-                r#type: OpenAIMessageType::Text,
-                content: ContentWrapper::Text(item.content.clone()), // Adjusted here
-            })
-            .collect();
-
-        OpenAIMessage {
-            content: contents,
-            role: Roles::User,
-            path: content.get(0).and_then(|c| c.path.clone()),
-            scope_name: content.get(0).and_then(|c| c.scope_name.clone()),
-            tool_call_id: None,
-            name: Some("OpenAI_completion".to_string()),
+impl From<SublimeInputContent> for CacheEntry {
+    fn from(content: SublimeInputContent) -> Self {
+        CacheEntry {
+            content: content.content,
+            path: content.path,
+            scope: content.scope,
+            role: if content.tool_id.is_some() { Roles::Tool } else { Roles::User },
+            tool_call: None,
+            tool_call_id: content.tool_id,
         }
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct MessageContent {
-    pub r#type: OpenAIMessageType,
-    pub content: ContentWrapper,
-}
+impl From<AssistantMessage> for CacheEntry {
+    fn from(content: AssistantMessage) -> Self {
+        let first_tool_call = content
+            .tool_calls
+            .as_ref()
+            .and_then(|calls| calls.first().cloned());
 
-#[derive(Debug, PartialEq)]
-pub enum ContentWrapper {
-    Text(String),
-    ImageUrl(ImageContent),
-    InputAudio(AudioContent),
-}
-
-impl serde::ser::Serialize for MessageContent {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::ser::Serializer,
-    {
-        use serde::ser::SerializeMap;
-
-        let mut map = serializer.serialize_map(Some(2))?;
-        map.serialize_entry("type", &self.r#type)?;
-
-        match &self.content {
-            ContentWrapper::Text(text) => map.serialize_entry("text", text)?,
-            ContentWrapper::ImageUrl(image) => map.serialize_entry("image_url", image)?,
-            ContentWrapper::InputAudio(audio) => map.serialize_entry("input_audio", audio)?,
+        CacheEntry {
+            content: content.content,
+            path: None,
+            scope: None,
+            role: content.role,
+            tool_call: first_tool_call.clone(),
+            tool_call_id: first_tool_call.map(|t| t.id),
         }
-
-        map.end()
     }
 }
 
-impl<'de> serde::de::Deserialize<'de> for MessageContent {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::de::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct MessageContentIntermediate {
-            #[serde(rename = "type")]
-            r#type: OpenAIMessageType,
-            #[serde(default)]
-            text: Option<String>,
-            #[serde(default)]
-            image_url: Option<ImageContent>,
-            #[serde(default)]
-            input_audio: Option<AudioContent>,
-        }
-
-        let intermediate = MessageContentIntermediate::deserialize(deserializer)?;
-
-        let content = if let Some(text) = intermediate.text {
-            ContentWrapper::Text(text)
-        } else if let Some(image_url) = intermediate.image_url {
-            ContentWrapper::ImageUrl(image_url)
-        } else if let Some(input_audio) = intermediate.input_audio {
-            ContentWrapper::InputAudio(input_audio)
-        } else {
-            return Err(serde::de::Error::custom(
-                "Missing content for MessageContent",
-            ));
-        };
-
-        Ok(MessageContent {
-            r#type: intermediate.r#type,
-            content,
-        })
-    }
+#[pyclass(eq, eq_int)]
+#[derive(EnumString, Display, Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum InputKind {
+    ViewSelection,
+    Command,
+    BuildOutputPanel,
+    LspOutputPanel,
+    Terminus,
+    FunctionResult,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub struct ImageContent {
-    pub url: String,
-    pub detail: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub struct AudioContent {
-    pub data: String,
-    pub format: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Function {
-    pub name: String,
-    pub arguments: HashMap<String, serde_json::Value>,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct ToolCall {
-    pub index: usize,
-    pub id: String,
-    pub r#type: String,
-    pub function: Function,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct AssistantMessage {
-    pub role: Roles,
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[pyclass]
+pub struct SublimeInputContent {
+    #[pyo3(get)]
     pub content: Option<String>,
-    pub tool_calls: Option<Vec<ToolCall>>,
+
+    #[pyo3(get)]
+    pub path: Option<String>,
+
+    #[pyo3(get)]
+    pub scope: Option<String>,
+
+    #[pyo3(get)]
+    pub input_kind: InputKind,
+
+    pub tool_id: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Choice {
-    pub index: usize,
-    pub finish_reason: Option<String>,
-    pub message: Vec<AssistantMessage>,
+#[pymethods]
+impl SublimeInputContent {
+    #[new]
+    #[pyo3(signature = (input_kind, content=None, path=None, scope=None))]
+    pub fn new(
+        input_kind: InputKind,
+        content: Option<String>,
+        path: Option<String>,
+        scope: Option<String>,
+    ) -> Self {
+        SublimeInputContent {
+            content,
+            path,
+            scope,
+            input_kind,
+            tool_id: None,
+        }
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct OpenAIResponse {
-    pub id: Option<String>,
-    pub object: Option<String>,
-    pub created: Option<i64>,
-    pub model: String,
-    pub choices: Vec<Choice>,
+#[pyclass]
+#[derive(Debug, Clone, Deserialize)]
+pub struct AssistantSettings {
+    #[pyo3(get)]
+    pub name: String,
+
+    #[pyo3(get)]
+    pub output_mode: OutputMode,
+
+    #[pyo3(get)]
+    pub url: String,
+
+    #[pyo3(get)]
+    pub chat_model: String,
+
+    #[pyo3(get)]
+    pub token: Option<String>,
+
+    #[pyo3(get)]
+    pub assistant_role: Option<String>,
+
+    #[pyo3(get)]
+    pub temperature: Option<f64>,
+
+    #[pyo3(get)]
+    pub max_tokens: Option<usize>,
+
+    #[pyo3(get)]
+    pub max_completion_tokens: Option<usize>,
+
+    #[pyo3(get)]
+    pub top_p: Option<usize>,
+
+    #[pyo3(get)]
+    pub frequency_penalty: Option<usize>,
+
+    #[pyo3(get)]
+    pub presence_penalty: Option<usize>,
+
+    #[pyo3(get)]
+    pub tools: Option<bool>,
+
+    #[pyo3(get)]
+    pub parallel_tool_calls: Option<bool>,
+
+    #[pyo3(get)]
+    pub stream: bool,
+
+    #[pyo3(get)]
+    pub advertisement: bool,
 }
 
-pub fn encode_response(response: &OpenAIResponse) -> String {
-    serde_json::to_string(response).unwrap()
+#[pymethods]
+impl AssistantSettings {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(
+        signature = (name, output_mode, chat_model, url=None, token=None, assistant_role=None,
+        temperature=None, max_tokens=None, max_completion_tokens=None, top_p=None, frequency_penalty=None,
+        presence_penalty=None, tools=None, parallel_tool_calls=None, stream=None, advertisement=None
+    ))]
+    pub fn new(
+        name: String,
+        output_mode: OutputMode,
+        chat_model: String,
+        url: Option<String>,
+        token: Option<String>,
+        assistant_role: Option<String>,
+        temperature: Option<f64>,
+        max_tokens: Option<usize>,
+        max_completion_tokens: Option<usize>,
+        top_p: Option<usize>,
+        frequency_penalty: Option<usize>,
+        presence_penalty: Option<usize>,
+        tools: Option<bool>,
+        parallel_tool_calls: Option<bool>,
+        stream: Option<bool>,
+        advertisement: Option<bool>,
+    ) -> Self {
+        let mut default = AssistantSettings::default();
+
+        default.name = name;
+        default.output_mode = output_mode;
+        default.token = token;
+        default.chat_model = chat_model;
+        default.url = url.unwrap_or(default.url);
+        default.assistant_role = assistant_role.or(default.assistant_role);
+        default.temperature = temperature.or(default.temperature);
+        default.max_tokens = max_tokens.or(default.max_tokens);
+        default.max_completion_tokens = max_completion_tokens.or(default.max_completion_tokens);
+        default.top_p = top_p.or(default.top_p);
+        default.frequency_penalty = frequency_penalty.or(default.frequency_penalty);
+        default.presence_penalty = presence_penalty.or(default.presence_penalty);
+        default.tools = tools.or(default.tools);
+        default.parallel_tool_calls = parallel_tool_calls.or(default.parallel_tool_calls);
+        default.stream = stream.unwrap_or(default.stream);
+        default.advertisement = advertisement.unwrap_or(default.advertisement);
+        default
+    }
 }
 
-pub fn decode_response(json: &str) -> OpenAIResponse {
-    serde_json::from_str(json).unwrap()
+impl Default for AssistantSettings {
+    fn default() -> Self {
+        Self {
+            name: "Default".to_string(),
+            output_mode: OutputMode::Phantom,
+            chat_model: "gpt-4o-mini".to_string(),
+            assistant_role: None,
+            url: "https://api.openai.com/v1/chat/completions".to_string(),
+            token: None,
+            temperature: None,
+            max_tokens: None,
+            max_completion_tokens: None,
+            top_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            tools: None,
+            parallel_tool_calls: None,
+            stream: true,
+            advertisement: true,
+        }
+    }
+}
+
+#[pyclass(eq, eq_int)]
+#[derive(EnumString, Display, Debug, Clone, Deserialize, PartialEq)]
+#[allow(unused)]
+pub enum OutputMode {
+    Panel,
+    Phantom,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
-    fn test_openai_message_serialization() {
-        let serialized = encode_response(&OpenAIResponse {
-            id: Some("123".to_string()),
-            object: Some("openai_response".to_string()),
-            created: Some(1616161616),
-            model: "gpt-3.5".to_string(),
-            choices: vec![Choice {
-                index: 0,
-                finish_reason: None,
-                message: vec![AssistantMessage {
-                    role: Roles::Assistant,
-                    content: Some("Response text".to_string()),
-                    tool_calls: None,
-                }],
-            }],
-        });
+    fn test_is_sync() {
+        fn is_sync<T: Sync>() {}
 
-        let expected_json = json!({
-            "id": "123",
-            "object": "openai_response",
-            "created": 1616161616,
-            "model": "gpt-3.5",
-            "choices": [
-                {
-                    "index": 0,
-                    "finish_reason": null,
-                    "message": [
-                        {
-                            "role": "assistant",
-                            "content": "Response text",
-                            "tool_calls": null
-                        }
-                    ]
-                }
-            ]
-        });
-
-        assert_eq!(
-            serde_json::to_value(serde_json::from_str::<OpenAIResponse>(&serialized).unwrap())
-                .unwrap(),
-            expected_json
-        );
+        is_sync::<OutputMode>();
+        is_sync::<AssistantSettings>();
+        is_sync::<SublimeInputContent>();
+        is_sync::<InputKind>();
+        is_sync::<CacheEntry>();
+        is_sync::<PromptMode>();
     }
 
     #[test]
-    fn test_openai_message_serialization_with_multiple_types() {
-        let message_content = vec![
-            MessageContent {
-                r#type: OpenAIMessageType::Text,
-                content: ContentWrapper::Text("Text string".to_string()),
-            },
-            MessageContent {
-                r#type: OpenAIMessageType::ImageUrl,
-                content: ContentWrapper::ImageUrl(ImageContent {
-                    url: "http://example.com/image.png".to_string(),
-                    detail: Some("high".to_string()),
-                }),
-            },
-            MessageContent {
-                r#type: OpenAIMessageType::InputAudio,
-                content: ContentWrapper::InputAudio(AudioContent {
-                    data: "audio_data".to_string(),
-                    format: Some("mp3".to_string()),
-                }),
-            },
-        ];
+    fn test_is_send() {
+        fn is_send<T: Send>() {}
 
-        let openai_message = OpenAIMessage {
-            content: message_content,
-            role: Roles::User,
-            path: None,
-            scope_name: None,
-            tool_call_id: None,
-            name: Some("OpenAI_completion".to_string()),
-        };
-
-        let serialized = serde_json::to_string(&openai_message).unwrap();
-
-        let expected_serialized = json!({
-            "content": [
-                {
-                    "type": "text",
-                    "text": "Text string", // corrected based on the struct
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": "http://example.com/image.png",
-                        "detail": "high"
-                    },
-                },
-                {
-                    "type": "input_audio",
-                    "input_audio": {
-                        "data": "audio_data",
-                        "format": "mp3"
-                    }
-                }
-            ],
-            "role": "user",
-            "path": null,
-            "scope_name": null,
-            "tool_call_id": null,
-            "name": "OpenAI_completion"
-        });
-
-        println!("{}", serialized); // For debugging you can display it.
-        assert_eq!(
-            serde_json::to_value(serde_json::from_str::<OpenAIMessage>(&serialized).unwrap())
-                .unwrap(),
-            expected_serialized
-        );
-    }
-
-    #[test]
-    fn test_openai_response_deserialization() {
-        let json_data = r#"
-        {
-            "id": "123",
-            "object": "openai_response",
-            "created": 1616161616,
-            "model": "gpt-3.5",
-            "choices": [
-                {
-                    "index": 0,
-                    "finish_reason": null,
-                    "message": [
-                        {
-                            "role": "assistant",
-                            "content": "Response text",
-                            "tool_calls": null
-                        }
-                    ]
-                }
-            ]
-        }"#;
-
-        let response: OpenAIResponse = decode_response(json_data);
-
-        assert_eq!(response.id, Some("123".to_string()));
-        assert_eq!(response.object, Some("openai_response".to_string()));
-        assert_eq!(response.created, Some(1616161616));
-        assert_eq!(response.model, "gpt-3.5");
-        assert_eq!(response.choices.len(), 1);
-        assert_eq!(response.choices[0].index, 0);
-        assert_eq!(response.choices[0].message[0].role, Roles::Assistant);
-        assert_eq!(
-            response.choices[0].message[0].content,
-            Some("Response text".to_string())
-        );
+        is_send::<OutputMode>();
+        is_send::<AssistantSettings>();
+        is_send::<SublimeInputContent>();
+        is_send::<InputKind>();
+        is_send::<CacheEntry>();
+        is_send::<PromptMode>();
     }
 }

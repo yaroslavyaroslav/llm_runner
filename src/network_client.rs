@@ -1,9 +1,6 @@
-use std::{
-    error::Error,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
 };
 
 use anyhow::Result;
@@ -23,39 +20,10 @@ use crate::{
     types::{AssistantSettings, CacheEntry, SublimeInputContent},
 };
 
-#[allow(unused)]
-#[derive(Debug)]
-pub enum OpenAIErrors {
-    ContextLengthExceededException,
-    UnknownException,
-    ReqwestError(reqwest::Error),
-    InvalidHeaderError(String),
-    JsonError(serde_json::Error),
-}
-
 #[derive(Clone)]
 pub struct NetworkClient {
     client: Client,
     headers: HeaderMap,
-}
-
-impl std::error::Error for OpenAIErrors {}
-
-impl std::fmt::Display for OpenAIErrors {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            OpenAIErrors::ContextLengthExceededException => {
-                write!(
-                    f,
-                    "The context length exceeds the limit"
-                )
-            }
-            OpenAIErrors::InvalidHeaderError(err) => write!(f, "Invalid header got passed {}", err),
-            OpenAIErrors::UnknownException => write!(f, "An unknown exception occurred"),
-            OpenAIErrors::ReqwestError(err) => write!(f, "A reqwest error occurred: {}", err),
-            OpenAIErrors::JsonError(err) => write!(f, "A json error occurred: {}", err),
-        }
-    }
 }
 
 impl NetworkClient {
@@ -84,27 +52,31 @@ impl NetworkClient {
         settings: AssistantSettings,
         cache_entries: Vec<CacheEntry>,
         sublime_inputs: Vec<SublimeInputContent>,
-    ) -> Result<String, OpenAIErrors> {
+    ) -> Result<String> {
         let internal_messages = OpenAICompletionRequest::create_openai_completion_request(
             settings,
             cache_entries,
             sublime_inputs,
         );
 
-        serde_json::to_string(&internal_messages).map_err(OpenAIErrors::JsonError)
+        serde_json::to_string(&internal_messages).map_err(|e| {
+            anyhow::anyhow!(format!(
+                "Failed to parse json string: {}",
+                e
+            ))
+        })
     }
 
     pub(crate) fn prepare_request(
         &self,
         settings: AssistantSettings,
         json_payload: String,
-    ) -> Result<Request, OpenAIErrors> {
+    ) -> Result<Request> {
         let url = settings.url.to_string();
         let mut headers = self.headers.clone();
         if let Some(token) = settings.token {
             let auth_header = format!("Bearer {}", token);
-            let auth_header = HeaderValue::from_str(&auth_header)
-                .map_err(|e| OpenAIErrors::InvalidHeaderError(e.to_string()))?;
+            let auth_header = HeaderValue::from_str(&auth_header)?;
             headers.insert(AUTHORIZATION, auth_header);
         }
 
@@ -113,7 +85,12 @@ impl NetworkClient {
             .headers(headers)
             .body(json_payload)
             .build()
-            .map_err(OpenAIErrors::ReqwestError)
+            .map_err(|e| {
+                anyhow::anyhow!(format!(
+                    "Failed to build request: {}",
+                    e
+                ))
+            })
     }
 
     pub async fn execute_request<T>(
@@ -122,7 +99,7 @@ impl NetworkClient {
         sender: Sender<String>,
         cancel_flag: Arc<AtomicBool>,
         stream: bool,
-    ) -> Result<T, Box<dyn Error>>
+    ) -> Result<T>
     where
         T: DeserializeOwned,
     {
@@ -156,14 +133,13 @@ impl NetworkClient {
                             merge_json(&mut composable_response, &json_value);
 
                             // TODO: To add "[ABORTED]" to history as well on break
-                            if let Some(content) = obtain_delta(
-                                json_value
-                                    .get("choices")
-                                    .and_then(|c| c.as_array())
-                                    .and_then(|arr| arr.first())
-                                    .and_then(|first| first.as_object())
-                                    .ok_or("Failed to parse JSON")?,
-                            ) {
+                            if let Some(content) = json_value
+                                .get("choices")
+                                .and_then(|c| c.as_array())
+                                .and_then(|arr| arr.first())
+                                .and_then(|first| first.as_object())
+                                .and_then(|fisr_object| obtain_delta(fisr_object))
+                            {
                                 let cloned_sender = sender.clone();
                                 tokio::spawn(async move {
                                     if cloned_sender
@@ -203,20 +179,20 @@ impl NetworkClient {
                     composable_response,
                 )?)
             } else {
-                Err(format!(
+                Err(anyhow::anyhow!(format!(
                     "Request failed with status: {}",
                     response.status()
-                )
+                ))
                 .into())
             }
         } else if response.status().is_success() {
             let payload = response.json::<T>().await?;
             Ok(payload)
         } else {
-            Err(format!(
+            Err(anyhow::anyhow!(format!(
                 "Request failed with status: {}",
                 response.status()
-            )
+            ))
             .into())
         }
     }
@@ -381,9 +357,6 @@ mod tests {
     async fn test_is_sync_and_send() {
         fn is_sync<T: Sync>() {}
         fn is_send<T: Send>() {}
-
-        is_sync::<OpenAIErrors>();
-        is_send::<OpenAIErrors>();
 
         is_sync::<NetworkClient>();
         is_send::<NetworkClient>();

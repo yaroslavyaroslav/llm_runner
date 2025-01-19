@@ -1,5 +1,4 @@
 use std::{
-    error::Error,
     str::FromStr,
     sync::{atomic::AtomicBool, Arc},
 };
@@ -27,7 +26,7 @@ impl LlmRunner {
         assistant_settings: AssistantSettings,
         sender: Sender<String>,
         cancel_flag: Arc<AtomicBool>,
-    ) -> Result<OpenAIResponse, Box<dyn Error>> {
+    ) -> Result<OpenAIResponse> {
         let cache_entries: Vec<CacheEntry> = cacher.read_entries()?;
 
         for entry in &contents {
@@ -36,17 +35,13 @@ impl LlmRunner {
                 .ok();
         }
 
-        let payload = provider
-            .prepare_payload(
-                assistant_settings.clone(),
-                cache_entries,
-                contents.clone(),
-            )
-            .map_err(|e| format!("Failed to prepare payload: {}", e))?;
+        let payload = provider.prepare_payload(
+            assistant_settings.clone(),
+            cache_entries,
+            contents.clone(),
+        )?;
 
-        let request = provider
-            .prepare_request(assistant_settings.clone(), payload)
-            .map_err(|e| format!("Failed to prepare request: {}", e))?;
+        let request = provider.prepare_request(assistant_settings.clone(), payload)?;
 
         // TODO: To make type to cast conditional to support various of protocols
         let result = provider

@@ -22,19 +22,18 @@ pub struct PythonWorker {
 }
 
 struct Function {
-    pub(crate) func: Arc<dyn Fn(String) + Send + Sync + 'static>, // Use a boxable trait object
+    func: Arc<dyn Fn(String) + Send + Sync + 'static>,
 }
 
 impl Function {
-    // Constructor to create a new Function from a PyObject
     fn new(obj: PyObject) -> Self {
         let func = Arc::new(move |s: String| {
             Python::with_gil(|py| {
-                let _ = obj.call1(py, (s,)); // Call the Python callable
+                let _ = obj.call1(py, (s,));
             });
         });
 
-        Function { func } // Return an instance of Function
+        Function { func }
     }
 }
 

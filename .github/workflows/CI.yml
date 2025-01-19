@@ -38,18 +38,18 @@ jobs:
             target: ppc64le
     steps:
       - uses: actions/checkout@v4
-      - name: Install OpenSSL development libraries
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+      - name: Instal OpenSSL
+        run: sudo apt-get update && sudo apt-get install pkg-config
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
-          manylinux: auto
+          # manylinux: auto
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:

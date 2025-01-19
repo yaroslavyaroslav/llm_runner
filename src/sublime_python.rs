@@ -18,7 +18,8 @@ pub struct Settings {
     pub settings_object: Py<PyDict>,
 }
 
-pub fn get_sublime_cache() -> PyResult<String> {
+#[allow(unused)]
+pub(crate) fn get_sublime_cache() -> PyResult<String> {
     Python::with_gil(|py| {
         let sublime = PyModule::import(py, "sublime")?;
         let cache_path: String = sublime

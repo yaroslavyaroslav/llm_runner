@@ -51,7 +51,6 @@ impl OpenAIWorker {
         assistant_settings: AssistantSettings,
         handler: Arc<dyn Fn(String) + Send + Sync + 'static>,
     ) -> Result<()> {
-        // Update instance variables
         self.view_id = Some(view_id);
         self.prompt_mode = Some(prompt_mode);
         self.assistant_settings = Some(assistant_settings.clone());
@@ -74,32 +73,20 @@ impl OpenAIWorker {
         )
         .await;
 
-        match execute_response {
-            Ok(response) => {
-                let handler = handler.to_owned();
+        StreamHandler::handle_stream_with(rx, handler).await;
 
-                StreamHandler::handle_stream_with(rx, handler).await;
+        let message = execute_response?
+            .choices
+            .first()
+            .cloned()
+            .ok_or(anyhow::anyhow!(
+                "No choices found in the response"
+            ))?
+            .message;
 
-                let message = response
-                    .choices
-                    .first()
-                    .cloned()
-                    .ok_or(std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        "No choices found in the response",
-                    ))?
-                    .message;
-
-                Ok(cacher.write_entry(&CacheEntry::from(message))?)
-            }
-            Err(e) => {
-                Err(anyhow::anyhow!(format!(
-                    "Failed to execute network request: {}",
-                    e
-                ))
-                .into())
-            }
-        }
+        cacher
+            .write_entry(&CacheEntry::from(message))
+            .map_err(|e| anyhow::anyhow!("Failed to write cache: {}", e))
     }
 
     pub fn cancel(&self) {

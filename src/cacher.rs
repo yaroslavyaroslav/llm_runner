@@ -1,14 +1,11 @@
 use std::{
     fs::{File, OpenOptions},
-    io::{self, BufRead, Write},
+    io::{BufRead, Write},
     path::Path,
 };
 
 use anyhow::Result;
-use serde::{de::Error, Deserialize, Serialize};
-use serde_json::Error as SerdeError;
-
-use crate::sublime_python;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -21,8 +18,7 @@ pub struct Cacher {
 #[allow(unused)]
 impl Cacher {
     pub fn new(name: Option<&str>) -> Self {
-        let cache_dir =
-            sublime_python::get_sublime_cache().unwrap_or("~/Library/Caches/Sublime Text/Cache".to_string());
+        let cache_dir = Cacher::sublime_cache();
 
         use std::path::{Path, PathBuf};
 
@@ -83,7 +79,7 @@ impl Cacher {
         Ok(())
     }
 
-    pub fn read_entries<T>(&self) -> Result<Vec<T>, SerdeError>
+    pub fn read_entries<T>(&self) -> Result<Vec<T>>
     where T: for<'de> Deserialize<'de> {
         self.create_file_if_not_exists(&self.history_file);
 
@@ -95,40 +91,32 @@ impl Cacher {
         let reader = std::io::BufReader::new(file);
         let mut entries = Vec::new();
 
-        for (num, line) in reader.lines().enumerate() {
-            let line = line.map_err(SerdeError::custom)?;
-            match serde_json::from_str::<T>(&line) {
-                Ok(obj) => entries.push(obj),
-                Err(err) => {
-                    eprintln!(
-                        "Malformed line skipped: {} (Error: {})",
-                        num, err
-                    )
-                }
-            }
-        }
+        reader
+            .lines()
+            .enumerate()
+            .for_each(|(num, line)| {
+                serde_json::from_str::<T>(&line.unwrap_or_default())
+                    .map(|obj| entries.push(obj))
+                    .unwrap_or_else(|err| {
+                        eprintln!(
+                            "Malformed line skipped: {} (Error: {})",
+                            num, err
+                        )
+                    });
+            });
 
         Ok(entries)
     }
 
     pub fn write_entry<T: Serialize>(&self, entry: &T) -> Result<()> {
-        let entry_json = serde_json::to_string(entry).map_err(|e| {
-            eprintln!("Error serializing entry: {}", e);
-            io::Error::new(
-                io::ErrorKind::Other,
-                "Serialization error",
-            )
-        })?;
+        let entry_json = serde_json::to_string(entry)?;
 
         let mut file = OpenOptions::new()
             .append(true)
             .create(true)
             .open(&self.history_file)?;
 
-        writeln!(file, "{}", entry_json).map_err(|e| {
-            eprintln!("Error writing to file: {}", e);
-            io::Error::new(io::ErrorKind::Other, "Write error")
-        })?;
+        writeln!(file, "{}", entry_json)?;
 
         Ok(())
     }
@@ -146,13 +134,20 @@ impl Cacher {
         let mut file = File::create(&self.history_file)?;
 
         for line in remaining_lines {
-            writeln!(file, "{}", line).map_err(|e| {
-                eprintln!("Error writing to file: {}", e);
-                io::Error::new(io::ErrorKind::Other, "Write error")
-            })?;
+            writeln!(file, "{}", line)?;
         }
 
         Ok(())
+    }
+
+    #[cfg(test)]
+    fn sublime_cache() -> String { "~/Library/Caches/Sublime Text/Cache".to_string() }
+
+    #[cfg(not(test))]
+    fn sublime_cache() -> String {
+        "~/Library/Caches/Sublime Text/Cache".to_string()
+        // crate::sublime_python::get_sublime_cache()
+        //     .unwrap_or("~/Library/Caches/Sublime Text/Cache".to_string())
     }
 }
 

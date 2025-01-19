@@ -170,7 +170,11 @@ pub struct AssistantSettings {
 impl AssistantSettings {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (name, output_mode, chat_model, url=None, token=None, assistant_role=None, temperature=None, max_tokens=None, max_completion_tokens=None, top_p=None, frequency_penalty=None, presence_penalty=None, tools=None, parallel_tool_calls=None, stream=None, advertisement=None))]
+    #[pyo3(
+        signature = (name, output_mode, chat_model, url=None, token=None, assistant_role=None,
+        temperature=None, max_tokens=None, max_completion_tokens=None, top_p=None, frequency_penalty=None,
+        presence_penalty=None, tools=None, parallel_tool_calls=None, stream=None, advertisement=None
+    ))]
     pub fn new(
         name: String,
         output_mode: OutputMode,

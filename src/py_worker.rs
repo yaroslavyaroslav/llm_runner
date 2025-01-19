@@ -1,6 +1,9 @@
-use std::sync::Arc;
+use std::{
+    sync::{Arc, Mutex},
+    thread,
+};
 
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use pyo3::prelude::*;
 use strum_macros::{Display, EnumString};
 use tokio::runtime::Runtime;
 
@@ -18,7 +21,7 @@ pub struct PythonWorker {
     #[pyo3(get)]
     pub proxy: Option<String>,
 
-    worker: OpenAIWorker,
+    worker: Arc<Mutex<OpenAIWorker>>,
 }
 
 struct Function {
@@ -45,7 +48,9 @@ impl PythonWorker {
         PythonWorker {
             window_id,
             proxy: proxy.clone(),
-            worker: OpenAIWorker::new(window_id, path, proxy),
+            worker: Arc::new(Mutex::new(OpenAIWorker::new(
+                window_id, path, proxy,
+            ))),
         }
     }
 
@@ -58,9 +63,13 @@ impl PythonWorker {
         assistant_settings: AssistantSettings,
         handler: PyObject,
     ) -> PyResult<()> {
-        Runtime::new()?
-            .block_on(async {
-                self.worker
+        let rt = Runtime::new().expect("Failed to create runtime");
+        let worker_clone = self.worker.clone();
+        thread::spawn(move || {
+            let result = rt.block_on(async move {
+                worker_clone
+                    .lock()
+                    .unwrap()
                     .run(
                         view_id,
                         contents,
@@ -69,11 +78,20 @@ impl PythonWorker {
                         Function::new(handler).func,
                     )
                     .await
-            })
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            });
+
+            result
+        });
+
+        Ok(())
     }
 
-    pub fn cancel(&mut self) { self.worker.cancel(); }
+    pub fn cancel(&mut self) {
+        self.worker
+            .lock()
+            .unwrap()
+            .cancel();
+    }
 }
 
 #[pyclass(eq, eq_int)]

@@ -11,7 +11,7 @@ use crate::{
     network_client::NetworkClient,
     runner::LlmRunner,
     stream_handler::StreamHandler,
-    types::{AssistantSettings, CacheEntry, PromptMode, SublimeInputContent},
+    types::{AssistantSettings, PromptMode, SublimeInputContent},
 };
 
 #[allow(unused, dead_code)]
@@ -61,9 +61,9 @@ impl OpenAIWorker {
         );
         let provider = NetworkClient::new(self.proxy.clone());
 
-        let (tx, rx) = mpsc::channel(32);
+        let (tx, rx) = mpsc::channel(view_id);
 
-        let execute_response = LlmRunner::execute(
+        let result = LlmRunner::execute(
             provider,
             &cacher,
             contents,
@@ -75,18 +75,7 @@ impl OpenAIWorker {
 
         StreamHandler::handle_stream_with(rx, handler).await;
 
-        let message = execute_response?
-            .choices
-            .first()
-            .cloned()
-            .ok_or(anyhow::anyhow!(
-                "No choices found in the response"
-            ))?
-            .message;
-
-        cacher
-            .write_entry(&CacheEntry::from(message))
-            .map_err(|e| anyhow::anyhow!("Failed to write cache: {}", e))
+        result
     }
 
     pub fn cancel(&self) {

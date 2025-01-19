@@ -59,12 +59,9 @@ impl NetworkClient {
             sublime_inputs,
         );
 
-        serde_json::to_string(&internal_messages).map_err(|e| {
-            anyhow::anyhow!(format!(
-                "Failed to parse json string: {}",
-                e
-            ))
-        })
+        Ok(serde_json::to_string(
+            &internal_messages,
+        )?)
     }
 
     pub(crate) fn prepare_request(
@@ -80,17 +77,12 @@ impl NetworkClient {
             headers.insert(AUTHORIZATION, auth_header);
         }
 
-        self.client
+        Ok(self
+            .client
             .post(url)
             .headers(headers)
             .body(json_payload)
-            .build()
-            .map_err(|e| {
-                anyhow::anyhow!(format!(
-                    "Failed to build request: {}",
-                    e
-                ))
-            })
+            .build()?)
     }
 
     pub async fn execute_request<T>(
@@ -142,13 +134,10 @@ impl NetworkClient {
                             {
                                 let cloned_sender = sender.clone();
                                 tokio::spawn(async move {
-                                    if cloned_sender
+                                    cloned_sender
                                         .send(content)
                                         .await
-                                        .is_err()
-                                    {
-                                        eprintln!("Failed to send SSE data");
-                                    }
+                                        .ok()
                                 });
                             }
 
@@ -162,14 +151,11 @@ impl NetworkClient {
                     let cloned_sender = sender.clone();
 
                     tokio::spawn(async move {
-                        if cloned_sender
+                        cloned_sender
                             .clone()
                             .send("\n[ABORTED]".to_string())
                             .await
-                            .is_err()
-                        {
-                            eprintln!("Failed to send [ABORTED]");
-                        }
+                            .ok()
                     });
                 }
 
@@ -186,8 +172,27 @@ impl NetworkClient {
                 .into())
             }
         } else if response.status().is_success() {
-            let payload = response.json::<T>().await?;
-            Ok(payload)
+            let json_body = response
+                .json::<Value>()
+                .await?;
+
+            if let Some(content) = json_body
+                .clone()
+                .get("choices")
+                .and_then(|c| c.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|first| first.as_object())
+                .and_then(|fisr_object| obtain_delta(fisr_object))
+            {
+                let cloned_sender = sender.clone();
+                tokio::spawn(async move {
+                    cloned_sender
+                        .send(content)
+                        .await
+                        .ok()
+                });
+            }
+            Ok(serde_json::from_value::<T>(json_body)?)
         } else {
             Err(anyhow::anyhow!(format!(
                 "Request failed with status: {}",
@@ -318,11 +323,9 @@ fn obtain_delta(map: &Map<String, Value>) -> Option<String> {
     }
 
     for value in map.values() {
-        if let Some(nested_map) = value.as_object() {
-            if let Some(result) = obtain_delta(nested_map) {
-                return Some(result);
-            }
-        }
+        return value
+            .as_object()
+            .and_then(|map| obtain_delta(map));
     }
 
     None

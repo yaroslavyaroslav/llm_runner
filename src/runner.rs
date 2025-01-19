@@ -26,7 +26,7 @@ impl LlmRunner {
         assistant_settings: AssistantSettings,
         sender: Sender<String>,
         cancel_flag: Arc<AtomicBool>,
-    ) -> Result<OpenAIResponse> {
+    ) -> Result<()> {
         let cache_entries: Vec<CacheEntry> = cacher.read_entries()?;
 
         for entry in &contents {
@@ -85,7 +85,11 @@ impl LlmRunner {
             ))
             .await
         } else {
-            result
+            cacher.write_entry(&CacheEntry::from(
+                result?.choices[0]
+                    .message
+                    .clone(),
+            ))
         }
     }
 

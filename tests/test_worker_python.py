@@ -193,4 +193,6 @@ async def test_python_worker_sse_function_run_cancel():
 
     await task
 
+    await asyncio.sleep(2)
+
     assert '\n[ABORTED]' in some_list

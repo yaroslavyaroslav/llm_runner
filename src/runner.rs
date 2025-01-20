@@ -16,7 +16,7 @@ use crate::{
 
 #[allow(unused, dead_code)]
 #[derive(Clone, Debug)]
-pub struct LlmRunner {}
+pub struct LlmRunner;
 
 impl LlmRunner {
     pub(crate) async fn execute(

@@ -18,6 +18,9 @@ strum = "0.26"
 strum_macros = "0.26"
 anyhow = "1.0"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+openssl = { version = "0.10", features = ["vendored"] }
+
 [dev-dependencies]
 wiremock = "0.5"
 tempfile = "3.4"

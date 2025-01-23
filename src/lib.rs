@@ -10,7 +10,7 @@ mod sublime_python;
 mod tools_definition;
 pub mod worker;
 
-use py_worker::{PythonPromptMode, PythonWorker};
+use py_worker::{read_all_cache, write_to_cache, PythonPromptMode, PythonWorker};
 use pyo3::prelude::*;
 use types::{AssistantSettings, InputKind, OutputMode, SublimeInputContent};
 
@@ -23,5 +23,6 @@ fn rust_helper(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SublimeInputContent>()?;
     m.add_class::<InputKind>()?;
 
-    Ok(())
+    m.add_function(wrap_pyfunction!(read_all_cache, m)?)?;
+    m.add_function(wrap_pyfunction!(write_to_cache, m)?)
 }

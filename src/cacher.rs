@@ -17,50 +17,42 @@ pub struct Cacher {
 
 #[allow(unused)]
 impl Cacher {
-    pub fn new(name: Option<&str>) -> Self {
+    pub fn new(name: &str) -> Self {
         let cache_dir = Cacher::sublime_cache();
 
         use std::path::{Path, PathBuf};
 
-        let (history_file, current_model_file, tokens_count_file) = if let Some(input) = name {
-            if Path::new(input).is_absolute() {
-                let base_path = PathBuf::from(input);
-                (
-                    base_path
-                        .join("_chat_history.json")
-                        .to_string_lossy()
-                        .into_owned(),
-                    base_path
-                        .join("_current_assistant.json")
-                        .to_string_lossy()
-                        .into_owned(),
-                    base_path
-                        .join("_tokens_count.json")
-                        .to_string_lossy()
-                        .into_owned(),
-                )
-            } else {
-                let name_prefix = format!("{}_", input);
-                (
-                    format!(
-                        "{}/{}chat_history.json",
-                        cache_dir, name_prefix
-                    ),
-                    format!(
-                        "{}/{}current_assistant.json",
-                        cache_dir, name_prefix
-                    ),
-                    format!(
-                        "{}/{}tokens_count.json",
-                        cache_dir, name_prefix
-                    ),
-                )
-            }
-        } else {
+        let (history_file, current_model_file, tokens_count_file) = if Path::new(name).is_absolute() {
+            let base_path = PathBuf::from(name);
             (
-                format!("{}/chat_history.json", cache_dir),
-                format!("{}/current_assistant.json", cache_dir),
-                format!("{}/tokens_count.json", cache_dir),
+                base_path
+                    .join("_chat_history.json")
+                    .to_string_lossy()
+                    .into_owned(),
+                base_path
+                    .join("_current_assistant.json")
+                    .to_string_lossy()
+                    .into_owned(),
+                base_path
+                    .join("_tokens_count.json")
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+        } else {
+            let name_prefix = format!("{}_", name);
+            (
+                format!(
+                    "{}/{}chat_history.json",
+                    cache_dir, name_prefix
+                ),
+                format!(
+                    "{}/{}current_assistant.json",
+                    cache_dir, name_prefix
+                ),
+                format!(
+                    "{}/{}tokens_count.json",
+                    cache_dir, name_prefix
+                ),
             )
         };
 
@@ -329,6 +321,7 @@ mod tests {
             read_entries[0],
             CacheEntry {
                 content: Some("Test request acknowledged.".to_string()),
+                thinking: None,
                 role: Roles::Assistant,
                 tool_call: None,
                 path: None,
@@ -342,6 +335,7 @@ mod tests {
             read_entries[1],
             CacheEntry {
                 content: Some("This is the test request, provide me 3 words response".to_string()),
+                thinking: None,
                 role: Roles::User,
                 tool_call: None,
                 path: None,
@@ -355,6 +349,7 @@ mod tests {
             read_entries[2],
             CacheEntry {
                 content: None,
+                thinking: None,
                 role: Roles::Assistant,
                 tool_call: Some(ToolCall {
                     id: "call_f4Ixx2ruFvbbqifrMKZ8Cxju".to_string(),
@@ -374,6 +369,7 @@ mod tests {
             read_entries[3],
             CacheEntry {
                 content: Some("created".to_string()),
+                thinking: None,
                 role: Roles::Tool,
                 tool_call: None,
                 path: None,

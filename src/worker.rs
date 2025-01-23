@@ -24,13 +24,13 @@ pub struct OpenAIWorker {
     pub(crate) contents: Vec<SublimeInputContent>,
     pub(crate) assistant_settings: Option<AssistantSettings>,
     pub(crate) proxy: Option<String>,
-    pub(crate) cacher_path: Option<String>,
+    pub(crate) cacher_path: String,
 
     cancel_signal: Arc<AtomicBool>,
 }
 
 impl OpenAIWorker {
-    pub fn new(window_id: usize, path: Option<String>, proxy: Option<String>) -> Self {
+    pub fn new(window_id: usize, path: String, proxy: Option<String>) -> Self {
         Self {
             window_id,
             view_id: None,
@@ -54,11 +54,7 @@ impl OpenAIWorker {
         self.view_id = Some(view_id);
         self.prompt_mode = Some(prompt_mode);
         self.assistant_settings = Some(assistant_settings.clone());
-        let cacher = Cacher::new(
-            self.cacher_path
-                .as_mut()
-                .map(|s| s.as_str()),
-        );
+        let cacher = Cacher::new(self.cacher_path.as_str());
         let provider = NetworkClient::new(self.proxy.clone());
 
         let (tx, rx) = mpsc::channel(view_id);

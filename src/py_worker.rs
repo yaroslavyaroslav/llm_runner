@@ -8,7 +8,8 @@ use strum_macros::{Display, EnumString};
 use tokio::runtime::Runtime;
 
 use crate::{
-    types::{AssistantSettings, PromptMode, SublimeInputContent},
+    cacher::Cacher,
+    types::{AssistantSettings, CacheEntry, PromptMode, SublimeInputContent},
     worker::OpenAIWorker,
 };
 
@@ -43,8 +44,8 @@ impl Function {
 #[pymethods]
 impl PythonWorker {
     #[new]
-    #[pyo3(signature = (window_id, path=None, proxy=None))]
-    fn new(window_id: usize, path: Option<String>, proxy: Option<String>) -> Self {
+    #[pyo3(signature = (window_id, path, proxy=None))]
+    fn new(window_id: usize, path: String, proxy: Option<String>) -> Self {
         PythonWorker {
             window_id,
             proxy: proxy.clone(),
@@ -92,6 +93,34 @@ impl PythonWorker {
             .unwrap()
             .cancel();
     }
+}
+
+#[pyfunction]
+#[allow(unused)]
+#[pyo3(signature = (path))]
+pub fn read_all_cache(path: &str) -> PyResult<Vec<SublimeInputContent>> {
+    let cacher = Cacher::new(path);
+    let cache_entries = cacher
+        .read_entries::<CacheEntry>()
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))?;
+
+    let vec = cache_entries
+        .iter()
+        .map(SublimeInputContent::from)
+        .collect();
+
+    Ok(vec)
+}
+
+#[pyfunction]
+#[allow(unused)]
+#[pyo3(signature = (path, content))]
+pub fn write_to_cache(path: &str, content: SublimeInputContent) -> PyResult<()> {
+    let entry = CacheEntry::from(content);
+
+    let cacher = Cacher::new(path);
+    cacher.write_entry::<CacheEntry>(&entry);
+    Ok(())
 }
 
 #[pyclass(eq, eq_int)]

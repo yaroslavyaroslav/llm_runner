@@ -19,6 +19,9 @@ pub(crate) struct CacheEntry {
     pub(crate) content: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) thinking: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) path: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -35,8 +38,13 @@ pub(crate) struct CacheEntry {
 
 impl From<SublimeInputContent> for CacheEntry {
     fn from(content: SublimeInputContent) -> Self {
+        // FIXME: Content should be parsed to extract thinking part
+        // content should be set without thinking part.
+        let thinking = content.content.clone();
+
         CacheEntry {
             content: content.content,
+            thinking,
             path: content.path,
             scope: content.scope,
             role: if content.tool_id.is_some() { Roles::Tool } else { Roles::User },
@@ -53,8 +61,13 @@ impl From<AssistantMessage> for CacheEntry {
             .as_ref()
             .and_then(|calls| calls.first().cloned());
 
+        // FIXME: Content should be parsed to extract thinking part
+        // content should be set without thinking part.
+        let thinking = content.content.clone();
+
         CacheEntry {
             content: content.content,
+            thinking,
             path: None,
             scope: None,
             role: content.role,
@@ -109,6 +122,18 @@ impl SublimeInputContent {
             path,
             scope,
             input_kind,
+            tool_id: None,
+        }
+    }
+}
+
+impl From<&CacheEntry> for SublimeInputContent {
+    fn from(content: &CacheEntry) -> Self {
+        SublimeInputContent {
+            content: content.content.clone(),
+            path: content.path.clone(),
+            scope: content.scope.clone(),
+            input_kind: InputKind::ViewSelection,
             tool_id: None,
         }
     }

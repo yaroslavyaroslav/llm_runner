@@ -10,9 +10,10 @@ mod sublime_python;
 mod tools_definition;
 pub mod worker;
 
-use py_worker::{read_all_cache, write_to_cache, PythonPromptMode, PythonWorker};
+use openai_network_types::Roles;
+use py_worker::{drop_all, read_all_cache, write_to_cache, PythonPromptMode, PythonWorker};
 use pyo3::prelude::*;
-use types::{AssistantSettings, InputKind, OutputMode, SublimeInputContent};
+use types::{AssistantSettings, InputKind, OutputMode, SublimeInputContent, SublimeOutputContent};
 
 #[pymodule]
 fn rust_helper(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -22,7 +23,10 @@ fn rust_helper(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<OutputMode>()?;
     m.add_class::<SublimeInputContent>()?;
     m.add_class::<InputKind>()?;
+    m.add_class::<SublimeOutputContent>()?;
+    m.add_class::<Roles>()?;
 
     m.add_function(wrap_pyfunction!(read_all_cache, m)?)?;
-    m.add_function(wrap_pyfunction!(write_to_cache, m)?)
+    m.add_function(wrap_pyfunction!(write_to_cache, m)?)?;
+    m.add_function(wrap_pyfunction!(drop_all, m)?)
 }

@@ -9,7 +9,7 @@ use tokio::runtime::Runtime;
 
 use crate::{
     cacher::Cacher,
-    types::{AssistantSettings, CacheEntry, PromptMode, SublimeInputContent},
+    types::{AssistantSettings, CacheEntry, PromptMode, SublimeInputContent, SublimeOutputContent},
     worker::OpenAIWorker,
 };
 
@@ -98,7 +98,7 @@ impl PythonWorker {
 #[pyfunction]
 #[allow(unused)]
 #[pyo3(signature = (path))]
-pub fn read_all_cache(path: &str) -> PyResult<Vec<SublimeInputContent>> {
+pub fn read_all_cache(path: &str) -> PyResult<Vec<SublimeOutputContent>> {
     let cacher = Cacher::new(path);
     let cache_entries = cacher
         .read_entries::<CacheEntry>()
@@ -106,7 +106,7 @@ pub fn read_all_cache(path: &str) -> PyResult<Vec<SublimeInputContent>> {
 
     let vec = cache_entries
         .iter()
-        .map(SublimeInputContent::from)
+        .map(SublimeOutputContent::from)
         .collect();
 
     Ok(vec)
@@ -120,6 +120,15 @@ pub fn write_to_cache(path: &str, content: SublimeInputContent) -> PyResult<()> 
 
     let cacher = Cacher::new(path);
     cacher.write_entry::<CacheEntry>(&entry);
+    Ok(())
+}
+
+#[pyfunction]
+#[allow(unused)]
+#[pyo3(signature = (path))]
+pub fn drop_all(path: &str) -> PyResult<()> {
+    let cacher = Cacher::new(path);
+    cacher.drop_all();
     Ok(())
 }
 

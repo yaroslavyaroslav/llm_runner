@@ -26,13 +26,16 @@ impl LlmRunner {
         assistant_settings: AssistantSettings,
         sender: Sender<String>,
         cancel_flag: Arc<AtomicBool>,
+        store: bool,
     ) -> Result<()> {
         let cache_entries: Vec<CacheEntry> = cacher.read_entries()?;
 
-        for entry in &contents {
-            cacher
-                .write_entry(&CacheEntry::from(entry.clone()))
-                .ok();
+        if store {
+            for entry in &contents {
+                cacher
+                    .write_entry(&CacheEntry::from(entry.clone()))
+                    .ok();
+            }
         }
 
         let payload = provider.prepare_payload(
@@ -82,14 +85,19 @@ impl LlmRunner {
                 assistant_settings,
                 sender,
                 cancel_flag,
+                false, // storing function calls chain disregarding user settings
             ))
             .await
         } else {
-            cacher.write_entry(&CacheEntry::from(
-                result?.choices[0]
-                    .message
-                    .clone(),
-            ))
+            if store {
+                cacher.write_entry(&CacheEntry::from(
+                    result?.choices[0]
+                        .message
+                        .clone(),
+                ))
+            } else {
+                Ok(())
+            }
         }
     }
 

@@ -42,12 +42,23 @@ impl From<SublimeInputContent> for CacheEntry {
         // content should be set without thinking part.
         let thinking = content.content.clone();
 
+        let role = match content.input_kind {
+            InputKind::AssistantResponse => Roles::Assistant,
+            _ => {
+                if content.tool_id.is_some() {
+                    Roles::Tool
+                } else {
+                    Roles::User
+                }
+            }
+        };
+
         CacheEntry {
             content: content.content,
             thinking,
             path: content.path,
             scope: content.scope,
-            role: if content.tool_id.is_some() { Roles::Tool } else { Roles::User },
+            role,
             tool_call: None,
             tool_call_id: content.tool_id,
         }
@@ -87,6 +98,26 @@ pub enum InputKind {
     LspOutputPanel,
     Terminus,
     FunctionResult,
+    AssistantResponse,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[pyclass]
+pub struct SublimeOutputContent {
+    #[pyo3(get)]
+    pub content: Option<String>,
+
+    #[pyo3(get)]
+    pub role: Roles,
+}
+
+impl From<&CacheEntry> for SublimeOutputContent {
+    fn from(content: &CacheEntry) -> Self {
+        SublimeOutputContent {
+            content: content.content.clone(),
+            role: content.role.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -122,18 +153,6 @@ impl SublimeInputContent {
             path,
             scope,
             input_kind,
-            tool_id: None,
-        }
-    }
-}
-
-impl From<&CacheEntry> for SublimeInputContent {
-    fn from(content: &CacheEntry) -> Self {
-        SublimeInputContent {
-            content: content.content.clone(),
-            path: content.path.clone(),
-            scope: content.scope.clone(),
-            input_kind: InputKind::ViewSelection,
             tool_id: None,
         }
     }

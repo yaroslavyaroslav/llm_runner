@@ -22,19 +22,20 @@ impl Cacher {
 
         use std::path::{Path, PathBuf};
 
+        // TODO: Seems that this conditioning is useless and should be removed by expecting the absolute path only.
         let (history_file, current_model_file, tokens_count_file) = if Path::new(name).is_absolute() {
             let base_path = PathBuf::from(name);
             (
                 base_path
-                    .join("_chat_history.json")
+                    .join("chat_history.jl")
                     .to_string_lossy()
                     .into_owned(),
                 base_path
-                    .join("_current_assistant.json")
+                    .join("current_assistant.json")
                     .to_string_lossy()
                     .into_owned(),
                 base_path
-                    .join("_tokens_count.json")
+                    .join("tokens_count.json")
                     .to_string_lossy()
                     .into_owned(),
             )
@@ -42,7 +43,7 @@ impl Cacher {
             let name_prefix = format!("{}_", name);
             (
                 format!(
-                    "{}/{}chat_history.json",
+                    "{}/{}chat_history.jl",
                     cache_dir, name_prefix
                 ),
                 format!(
@@ -129,6 +130,11 @@ impl Cacher {
             writeln!(file, "{}", line)?;
         }
 
+        Ok(())
+    }
+
+    pub fn drop_all(&self) -> Result<()> {
+        let mut file = File::create(&self.history_file)?;
         Ok(())
     }
 

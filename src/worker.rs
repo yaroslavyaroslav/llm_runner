@@ -59,6 +59,11 @@ impl OpenAIWorker {
 
         let (tx, rx) = mpsc::channel(view_id);
 
+        let store = match prompt_mode {
+            PromptMode::View => true,
+            PromptMode::Phantom => false,
+        };
+
         let result = LlmRunner::execute(
             provider,
             &cacher,
@@ -66,6 +71,7 @@ impl OpenAIWorker {
             assistant_settings,
             tx,
             Arc::clone(&self.cancel_signal),
+            store,
         )
         .await;
 

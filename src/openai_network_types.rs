@@ -1,6 +1,8 @@
 use anyhow::Result;
+use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use strum_macros::{Display, EnumString};
 
 use crate::{
     tools_definition::FUNCTIONS,
@@ -275,7 +277,8 @@ pub(crate) struct AudioContent {
     pub(crate) format: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[pyclass(eq, eq_int)]
+#[derive(EnumString, Display, Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Roles {
     User,

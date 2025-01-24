@@ -1,13 +1,18 @@
-use pyo3::{pyclass, pymethods};
+use std::{collections::HashMap, str::FromStr};
+
+use pyo3::{pyclass, pymethods, FromPyObject};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
 
 use crate::openai_network_types::{AssistantMessage, Roles, ToolCall};
 
 #[allow(unused)]
-#[derive(Clone, Copy, Debug)]
+#[pyclass(eq, eq_int)]
+#[derive(EnumString, Display, Debug, Clone, Deserialize, PartialEq, Serialize)]
 pub enum PromptMode {
+    #[strum(serialize = "view")]
     View,
+    #[strum(serialize = "phantom")]
     Phantom,
     // OutputPanel, // TODO: review is it necessary
 }
@@ -159,48 +164,58 @@ impl SublimeInputContent {
 }
 
 #[pyclass]
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AssistantSettings {
     #[pyo3(get)]
     pub name: String,
 
     #[pyo3(get)]
-    pub output_mode: OutputMode,
+    pub output_mode: PromptMode,
 
-    #[pyo3(get)]
+    #[pyo3(get, set)]
     pub url: String,
 
     #[pyo3(get)]
     pub chat_model: String,
 
-    #[pyo3(get)]
+    #[pyo3(get, set)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
 
     #[pyo3(get)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub assistant_role: Option<String>,
 
     #[pyo3(get)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
 
     #[pyo3(get)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<usize>,
 
     #[pyo3(get)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_completion_tokens: Option<usize>,
 
     #[pyo3(get)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub top_p: Option<usize>,
 
     #[pyo3(get)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub frequency_penalty: Option<usize>,
 
     #[pyo3(get)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub presence_penalty: Option<usize>,
 
     #[pyo3(get)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<bool>,
 
     #[pyo3(get)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub parallel_tool_calls: Option<bool>,
 
     #[pyo3(get)]
@@ -210,51 +225,84 @@ pub struct AssistantSettings {
     pub advertisement: bool,
 }
 
+#[derive(FromPyObject, Clone)]
+pub enum RustyEnum {
+    Bool(bool),
+    Int(usize),
+    Float(f64),
+    String(String),
+}
+
 #[pymethods]
 impl AssistantSettings {
     #[new]
-    #[allow(clippy::too_many_arguments)]
-    #[pyo3(
-        signature = (name, output_mode, chat_model, url=None, token=None, assistant_role=None,
-        temperature=None, max_tokens=None, max_completion_tokens=None, top_p=None, frequency_penalty=None,
-        presence_penalty=None, tools=None, parallel_tool_calls=None, stream=None, advertisement=None
-    ))]
-    pub fn new(
-        name: String,
-        output_mode: OutputMode,
-        chat_model: String,
-        url: Option<String>,
-        token: Option<String>,
-        assistant_role: Option<String>,
-        temperature: Option<f64>,
-        max_tokens: Option<usize>,
-        max_completion_tokens: Option<usize>,
-        top_p: Option<usize>,
-        frequency_penalty: Option<usize>,
-        presence_penalty: Option<usize>,
-        tools: Option<bool>,
-        parallel_tool_calls: Option<bool>,
-        stream: Option<bool>,
-        advertisement: Option<bool>,
-    ) -> Self {
+    #[pyo3(signature = (dict))]
+    pub fn new(dict: HashMap<String, RustyEnum>) -> Self {
         let mut default = AssistantSettings::default();
 
-        default.name = name;
-        default.output_mode = output_mode;
-        default.token = token;
-        default.chat_model = chat_model;
-        default.url = url.unwrap_or(default.url);
-        default.assistant_role = assistant_role.or(default.assistant_role);
-        default.temperature = temperature.or(default.temperature);
-        default.max_tokens = max_tokens.or(default.max_tokens);
-        default.max_completion_tokens = max_completion_tokens.or(default.max_completion_tokens);
-        default.top_p = top_p.or(default.top_p);
-        default.frequency_penalty = frequency_penalty.or(default.frequency_penalty);
-        default.presence_penalty = presence_penalty.or(default.presence_penalty);
-        default.tools = tools.or(default.tools);
-        default.parallel_tool_calls = parallel_tool_calls.or(default.parallel_tool_calls);
-        default.stream = stream.unwrap_or(default.stream);
-        default.advertisement = advertisement.unwrap_or(default.advertisement);
+        if let Some(RustyEnum::String(value)) = dict.get("name") {
+            default.name = value.clone();
+        }
+
+        if let Some(RustyEnum::String(value)) = dict.get("output_mode") {
+            default.output_mode = PromptMode::from_str(value).unwrap_or(PromptMode::Phantom);
+        }
+
+        if let Some(RustyEnum::String(value)) = dict.get("token") {
+            default.token = Some(value.clone());
+        }
+        if let Some(RustyEnum::String(value)) = dict.get("chat_model") {
+            default.chat_model = value.clone();
+        }
+
+        if let Some(RustyEnum::String(value)) = dict.get("url") {
+            default.url = value.clone();
+        }
+
+        if let Some(RustyEnum::String(value)) = dict.get("assistant_role") {
+            default.assistant_role = Some(value.clone());
+        }
+
+        if let Some(RustyEnum::Float(value)) = dict.get("temperature") {
+            default.temperature = Some(value.clone().into());
+        }
+
+        if let Some(RustyEnum::Int(value)) = dict.get("max_tokens") {
+            default.max_tokens = Some(value.clone());
+        }
+
+        if let Some(RustyEnum::Int(value)) = dict.get("max_completion_tokens") {
+            default.max_completion_tokens = Some(value.clone()); // TODO: This should be self exclusive with max_tokens
+        }
+
+        if let Some(RustyEnum::Int(value)) = dict.get("top_p") {
+            default.top_p = Some(value.clone());
+        }
+
+        if let Some(RustyEnum::Int(value)) = dict.get("frequency_penalty") {
+            default.frequency_penalty = Some(value.clone().into());
+        }
+
+        if let Some(RustyEnum::Int(value)) = dict.get("presence_penalty") {
+            default.presence_penalty = Some(value.clone().into());
+        }
+
+        if let Some(RustyEnum::Bool(value)) = dict.get("tools") {
+            default.tools = Some(value.clone());
+        }
+
+        if let Some(RustyEnum::Bool(value)) = dict.get("parallel_tool_calls") {
+            default.parallel_tool_calls = Some(value.clone());
+        }
+
+        if let Some(RustyEnum::Bool(value)) = dict.get("stream") {
+            default.stream = value.clone();
+        }
+
+        if let Some(RustyEnum::Bool(value)) = dict.get("advertisement") {
+            default.advertisement = value.clone();
+        }
+
         default
     }
 }
@@ -263,7 +311,7 @@ impl Default for AssistantSettings {
     fn default() -> Self {
         Self {
             name: "Default".to_string(),
-            output_mode: OutputMode::Phantom,
+            output_mode: PromptMode::Phantom,
             chat_model: "gpt-4o-mini".to_string(),
             assistant_role: None,
             url: "https://api.openai.com/v1/chat/completions".to_string(),
@@ -282,14 +330,6 @@ impl Default for AssistantSettings {
     }
 }
 
-#[pyclass(eq, eq_int)]
-#[derive(EnumString, Display, Debug, Clone, Deserialize, PartialEq)]
-#[allow(unused)]
-pub enum OutputMode {
-    Panel,
-    Phantom,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,7 +338,6 @@ mod tests {
     fn test_is_sync() {
         fn is_sync<T: Sync>() {}
 
-        is_sync::<OutputMode>();
         is_sync::<AssistantSettings>();
         is_sync::<SublimeInputContent>();
         is_sync::<InputKind>();
@@ -310,7 +349,6 @@ mod tests {
     fn test_is_send() {
         fn is_send<T: Send>() {}
 
-        is_send::<OutputMode>();
         is_send::<AssistantSettings>();
         is_send::<SublimeInputContent>();
         is_send::<InputKind>();

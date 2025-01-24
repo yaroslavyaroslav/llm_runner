@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -64,7 +64,7 @@ impl Cacher {
         }
     }
 
-    fn create_file_if_not_exists(&self, path: &str) -> Result<()> {
+    fn create_file_if_not_exists(path: &str) -> Result<()> {
         if !Path::new(path).exists() {
             File::create(path)?;
             println!("File created successfully.");
@@ -74,7 +74,7 @@ impl Cacher {
 
     pub fn read_entries<T>(&self) -> Result<Vec<T>>
     where T: for<'de> Deserialize<'de> {
-        self.create_file_if_not_exists(&self.history_file);
+        Self::create_file_if_not_exists(&self.history_file);
 
         let file = match File::open(&self.history_file) {
             Ok(file) => file,
@@ -112,6 +112,32 @@ impl Cacher {
         writeln!(file, "{}", entry_json)?;
 
         Ok(())
+    }
+
+    pub fn write_model<T: Serialize>(&self, model: &T) -> Result<()> {
+        let model_json = serde_json::to_string(model)?;
+
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&self.current_model_file)?;
+
+        writeln!(file, "{}", model_json)?;
+
+        Ok(())
+    }
+
+    pub fn read_model<T: DeserializeOwned>(&self) -> Result<T> {
+        Self::create_file_if_not_exists(&self.current_model_file);
+
+        let file = File::open(&self.current_model_file)?;
+        let reader = std::io::BufReader::new(file);
+
+        // Read the file and deserialize it into the desired type `T`
+        let model: T = serde_json::from_reader(reader)?;
+
+        Ok(model)
     }
 
     pub fn drop_first(&self, lines_num: usize) -> Result<()> {
@@ -240,9 +266,7 @@ mod tests {
             tokens_count_file: "".to_string(),
         };
 
-        cacher
-            .create_file_if_not_exists(&cacher.history_file)
-            .ok();
+        Cacher::create_file_if_not_exists(&cacher.history_file).ok();
 
         let read_entries: Vec<TestEntry> = cacher.read_entries().unwrap();
 

@@ -52,7 +52,7 @@ impl OpenAIWorker {
         handler: Arc<dyn Fn(String) + Send + Sync + 'static>,
     ) -> Result<()> {
         self.view_id = Some(view_id);
-        self.prompt_mode = Some(prompt_mode);
+        self.prompt_mode = Some(prompt_mode.clone());
         self.assistant_settings = Some(assistant_settings.clone());
         let cacher = Cacher::new(self.cacher_path.as_str());
         let provider = NetworkClient::new(self.proxy.clone());

@@ -783,7 +783,7 @@ mod tests {
 
         let settings = AssistantSettings {
             name: "Test Assistant".to_string(),
-            output_mode: crate::types::OutputMode::Phantom,
+            output_mode: crate::types::PromptMode::Phantom,
             chat_model: "gpt-4o-mini".to_string(),
             url: mock_server.uri(),
             token: None,

@@ -4,7 +4,6 @@ use std::{
 };
 
 use pyo3::prelude::*;
-use strum_macros::{Display, EnumString};
 use tokio::runtime::Runtime;
 
 use crate::{
@@ -59,7 +58,7 @@ impl PythonWorker {
     fn run(
         &mut self,
         view_id: usize,
-        prompt_mode: PythonPromptMode,
+        prompt_mode: PromptMode,
         contents: Vec<SublimeInputContent>,
         assistant_settings: AssistantSettings,
         handler: PyObject,
@@ -74,7 +73,7 @@ impl PythonWorker {
                     .run(
                         view_id,
                         contents,
-                        PromptMode::from(prompt_mode),
+                        prompt_mode,
                         assistant_settings,
                         Function::new(handler).func,
                     )
@@ -126,58 +125,32 @@ pub fn write_to_cache(path: &str, content: SublimeInputContent) -> PyResult<()> 
 #[pyfunction]
 #[allow(unused)]
 #[pyo3(signature = (path))]
+pub fn read_model(path: &str) -> PyResult<AssistantSettings> {
+    let cacher = Cacher::new(path);
+    let model = cacher
+        .read_model::<AssistantSettings>()
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))?;
+
+    Ok(model)
+}
+
+#[pyfunction]
+#[allow(unused)]
+#[pyo3(signature = (path, model))]
+pub fn write_model(path: &str, model: AssistantSettings) -> PyResult<()> {
+    println!("path in rust: {}", path);
+    let cacher = Cacher::new(path);
+    cacher.write_model::<AssistantSettings>(&model);
+    Ok(())
+}
+
+#[pyfunction]
+#[allow(unused)]
+#[pyo3(signature = (path))]
 pub fn drop_all(path: &str) -> PyResult<()> {
     let cacher = Cacher::new(path);
     cacher.drop_all();
     Ok(())
-}
-
-#[pyclass(eq, eq_int)]
-#[derive(EnumString, Display, Debug, Clone, Copy, PartialEq)]
-pub enum PythonPromptMode {
-    #[strum(serialize = "view")]
-    View,
-
-    #[strum(serialize = "phantom")]
-    Phantom,
-}
-
-impl From<PromptMode> for PythonPromptMode {
-    fn from(mode: PromptMode) -> Self {
-        match mode {
-            PromptMode::View => PythonPromptMode::View,
-            PromptMode::Phantom => PythonPromptMode::Phantom,
-        }
-    }
-}
-
-impl From<PythonPromptMode> for PromptMode {
-    fn from(py_mode: PythonPromptMode) -> Self {
-        match py_mode {
-            PythonPromptMode::View => PromptMode::View,
-            PythonPromptMode::Phantom => PromptMode::Phantom,
-        }
-    }
-}
-
-#[pymethods]
-impl PythonPromptMode {
-    #[staticmethod]
-    pub fn from_str(s: &str) -> Option<PythonPromptMode> {
-        match s.to_lowercase().as_str() {
-            "view" => Some(PythonPromptMode::View),
-            "phantom" => Some(PythonPromptMode::Phantom),
-            _ => None, // Handle invalid input by returning None
-        }
-    }
-
-    #[staticmethod]
-    pub fn to_str(py_mode: PythonPromptMode) -> String {
-        match py_mode {
-            PythonPromptMode::View => "view".to_string(),
-            PythonPromptMode::Phantom => "phantom".to_string(),
-        }
-    }
 }
 
 #[cfg(test)]

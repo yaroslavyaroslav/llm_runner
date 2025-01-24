@@ -6,7 +6,7 @@ import pytest
 from rust_helper import (
     AssistantSettings,  # type: ignore
     InputKind,  # type: ignore
-    OutputMode,  # type: ignore
+    PromptMode,  # type: ignore
     PythonPromptMode,  # type: ignore
     SublimeInputContent,  # type: ignore
     Worker,  # type: ignore
@@ -30,37 +30,38 @@ def test_prompt_mode_from_str():
 
 
 def test_python_worker_initialization():
-    worker = Worker(window_id=100)
+    worker = Worker(window_id=100, path='/tmp/')
 
     assert worker.window_id == 100
 
 
 def test_assistant_settings():
-    settings = AssistantSettings(
-        'name',
-        OutputMode.Phantom,
-        'gpt-4o-mini',
-        url=None,
-        token='token',
-        assistant_role='Some Role',
-        temperature=0.7,
-        max_tokens=1024,
-        max_completion_tokens=2048,
-        top_p=1,
-        frequency_penalty=2,
-        presence_penalty=3,
-        tools=True,
-        parallel_tool_calls=False,
-        stream=None,
-        advertisement=None,
-    )
+    dicttt = {
+        'name': 'Example',
+        'output_mode': 'view',
+        'chat_model': 'gpt-4o-mini',
+        'assistant_role': 'Some Role',
+        'url': 'https://api.openai.com/v1/chat/completions',
+        'token': 'some_token',
+        'tools': True,
+        'parallel_tool_calls': False,
+        'temperature': 0.7,
+        'max_tokens': 1024,
+        'max_completion_tokens': 2048,
+        'top_p': 1,
+        'frequency_penalty': 2,
+        'stream': True,
+        'presence_penalty': 3,
+        'advertisement': True,
+    }
 
-    assert settings.name == 'name'
-    assert settings.output_mode == OutputMode.Phantom
+    settings = AssistantSettings(dicttt)
+
+    assert settings.name == 'Example'
     assert settings.chat_model == 'gpt-4o-mini'
     assert settings.assistant_role == 'Some Role'
     assert settings.url == 'https://api.openai.com/v1/chat/completions'  # default value
-    assert settings.token == 'token'
+    assert settings.token == 'some_token'
     assert settings.temperature == 0.7
     assert settings.max_tokens == 1024
     assert settings.max_completion_tokens == 2048
@@ -71,6 +72,7 @@ def test_assistant_settings():
     assert settings.parallel_tool_calls is False
     assert settings.stream  # defaule value True
     assert settings.advertisement  # defaule value True
+    assert settings.output_mode == PromptMode.View
 
 
 def test_sublime_input_content():

@@ -92,6 +92,33 @@ impl PythonWorker {
             .unwrap()
             .cancel();
     }
+
+    fn run_sync(
+        &mut self,
+        view_id: usize,
+        prompt_mode: PromptMode,
+        contents: Vec<SublimeInputContent>,
+        assistant_settings: AssistantSettings,
+        handler: PyObject,
+    ) -> PyResult<()> {
+        let rt = Runtime::new().expect("Failed to create runtime");
+        let worker_clone = self.worker.clone();
+        let _ = rt.block_on(async move {
+            worker_clone
+                .lock()
+                .unwrap()
+                .run(
+                    view_id,
+                    contents,
+                    prompt_mode,
+                    assistant_settings,
+                    Function::new(handler).func,
+                )
+                .await
+        });
+
+        Ok(())
+    }
 }
 
 #[pyfunction]

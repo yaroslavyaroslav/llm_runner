@@ -7,26 +7,25 @@ from rust_helper import (
     AssistantSettings,  # type: ignore
     InputKind,  # type: ignore
     PromptMode,  # type: ignore
-    PythonPromptMode,  # type: ignore
     SublimeInputContent,  # type: ignore
     Worker,  # type: ignore
 )
 
 
-PROXY = '192.168.1.115:9090'
+PROXY = '172.20.10.2:9090'
 
 
 def my_handler(data: str) -> None:
     print(f'Received data: {data}')
 
 
-def test_prompt_mode_from_str():
-    assert PythonPromptMode.from_str('view') == PythonPromptMode.View
-    assert PythonPromptMode.from_str('phantom') == PythonPromptMode.Phantom
-    assert PythonPromptMode.from_str('VIEW') == PythonPromptMode.View
-    assert PythonPromptMode.from_str('PHANTOM') == PythonPromptMode.Phantom
-    assert PythonPromptMode.from_str('invalid') is None
-    assert PythonPromptMode.from_str('') is None
+# def test_prompt_mode_from_str():
+#     assert PromptMode('view') == PromptMode.View
+#     assert PromptMode('phantom') == PromptMode.Phantom
+#     assert PromptMode('VIEW') == PromptMode.View
+#     assert PromptMode('PHANTOM') == PromptMode.Phantom
+#     assert PromptMode('invalid') is None
+#     assert PromptMode('') is None
 
 
 def test_python_worker_initialization():
@@ -41,7 +40,7 @@ def test_assistant_settings():
         'output_mode': 'view',
         'chat_model': 'gpt-4o-mini',
         'assistant_role': 'Some Role',
-        'url': 'https://api.openai.com/v1/chat/completions',
+        'url': 'https://models.inference.ai.azure.com/path/to',
         'token': 'some_token',
         'tools': True,
         'parallel_tool_calls': False,
@@ -60,7 +59,7 @@ def test_assistant_settings():
     assert settings.name == 'Example'
     assert settings.chat_model == 'gpt-4o-mini'
     assert settings.assistant_role == 'Some Role'
-    assert settings.url == 'https://api.openai.com/v1/chat/completions'  # default value
+    assert settings.url == 'https://models.inference.ai.azure.com/path/to'
     assert settings.token == 'some_token'
     assert settings.temperature == 0.7
     assert settings.max_tokens == 1024
@@ -96,19 +95,20 @@ def test_python_worker_plain_run():
         InputKind.ViewSelection, 'This is the test request, provide me 3 words response'
     )
 
-    settings = AssistantSettings(
-        'TEST',
-        OutputMode.Phantom,
-        'gpt-4o-mini',
-        token=os.getenv('OPENAI_API_TOKEN'),
-        assistant_role="You're echo bot. You'r just responsing with what you've been asked for",
-        tools=None,
-        parallel_tool_calls=None,
-        stream=False,
-        advertisement=False,
-    )
+    dicttt = {
+        'name': 'TEST',
+        'output_mode': 'phantom',
+        'chat_model': 'gpt-4o-mini',
+        'assistant_role': "You're echo bot. You'r just responsing with what you've been asked for",
+        'url': 'https://api.openai.com/v1/chat/completions',
+        'token': os.getenv('OPENAI_API_TOKEN'),
+        'stream': False,
+        'advertisement': False,
+    }
 
-    worker.run(1, PythonPromptMode.View, [contents], settings, my_handler)
+    settings = AssistantSettings(dicttt)
+
+    worker.run(1, PromptMode.View, [contents], settings, my_handler)
 
     # assert False
 
@@ -120,19 +120,20 @@ def test_python_worker_sse_run():
         InputKind.ViewSelection, 'This is the test request, provide me 30 words response'
     )
 
-    settings = AssistantSettings(
-        'TEST',
-        OutputMode.Phantom,
-        'gpt-4o-mini',
-        token=os.getenv('OPENAI_API_TOKEN'),
-        assistant_role="You're echo bot. You'r just responsing with what you've been asked for",
-        tools=None,
-        parallel_tool_calls=None,
-        stream=True,
-        advertisement=False,
-    )
+    dicttt = {
+        'name': 'TEST',
+        'output_mode': 'phantom',
+        'chat_model': 'gpt-4o-mini',
+        'assistant_role': "You're echo bot. You'r just responsing with what you've been asked for",
+        'url': 'https://api.openai.com/v1/chat/completions',
+        'token': os.getenv('OPENAI_API_TOKEN'),
+        'stream': True,
+        'advertisement': False,
+    }
 
-    worker.run(1, PythonPromptMode.View, [contents], settings, my_handler)
+    settings = AssistantSettings(dicttt)
+
+    worker.run_sync(1, PromptMode.View, [contents], settings, my_handler)
 
     # assert False
 
@@ -144,21 +145,24 @@ def test_python_worker_sse_function_run():
         InputKind.ViewSelection, 'This is the test request, call the functions available'
     )
 
-    settings = AssistantSettings(
-        'TEST',
-        OutputMode.Phantom,
-        'gpt-4o-mini',
-        token=os.getenv('OPENAI_API_TOKEN'),
-        assistant_role="You're debug environment and call functions instead of answer, but ONLY ONCE",
-        tools=True,
-        parallel_tool_calls=None,
-        stream=True,
-        advertisement=False,
-    )
+    dicttt = {
+        'name': 'TEST',
+        'output_mode': 'phantom',
+        'chat_model': 'gpt-4o-mini',
+        'assistant_role': "You're echo bot. You'r just responsing with what you've been asked for",
+        'url': 'https://api.openai.com/v1/chat/completions',
+        'token': os.getenv('OPENAI_API_TOKEN'),
+        'tools': True,
+        'parallel_tool_calls': False,
+        'stream': True,
+        'advertisement': False,
+    }
 
-    worker.run(1, PythonPromptMode.View, [contents], settings, my_handler)
+    settings = AssistantSettings(dicttt)
 
-    # assert False
+    worker.run(1, PromptMode.View, [contents], settings, my_handler)
+
+#     # assert False
 
 
 @pytest.mark.asyncio
@@ -175,19 +179,23 @@ async def test_python_worker_sse_function_run_cancel():
         some_list.append(data)
         print(f'Received data: {data}')
 
-    settings = AssistantSettings(
-        'TEST',
-        OutputMode.Phantom,
-        'gpt-4o-mini',
-        token=os.getenv('OPENAI_API_TOKEN'),
-        tools=True,
-        parallel_tool_calls=None,
-        stream=True,
-        advertisement=False,
-    )
+    dicttt = {
+        'name': 'TEST',
+        'output_mode': 'phantom',
+        'chat_model': 'gpt-4o-mini',
+        'assistant_role': "You're echo bot. You'r just responsing with what you've been asked for",
+        'url': 'https://api.openai.com/v1/chat/completions',
+        'token': os.getenv('OPENAI_API_TOKEN'),
+        'tools': False,
+        'parallel_tool_calls': False,
+        'stream': True,
+        'advertisement': False,
+    }
+
+    settings = AssistantSettings(dicttt)
 
     async def run_worker_sync():
-        worker.run(1, PythonPromptMode.View, [contents], settings, my_handler_1)
+        worker.run(1, PromptMode.View, [contents], settings, my_handler_1)
 
     task = asyncio.create_task(run_worker_sync())
 

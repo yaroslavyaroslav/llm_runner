@@ -69,7 +69,7 @@ impl NetworkClient {
         settings: AssistantSettings,
         json_payload: String,
     ) -> Result<Request> {
-        let url = settings.url.to_string();
+        let url = settings.url;
         let mut headers = self.headers.clone();
         if let Some(token) = settings.token {
             let auth_header = format!("Bearer {}", token);
@@ -401,6 +401,37 @@ mod tests {
         });
 
         assert_eq!(payload_json, expected_payload);
+    }
+
+    #[test]
+    async fn test_prepare_request() {
+        let client = NetworkClient::new(None);
+        let mut settings = AssistantSettings::default();
+        let url = "https://models.inference.ai.azure.com/some/path".to_string();
+        settings.url = url.clone();
+
+        let cache_entries = vec![];
+        let sublime_inputs = vec![SublimeInputContent {
+            content: Some("content".to_string()),
+            path: None,
+            scope: None,
+            input_kind: InputKind::ViewSelection,
+            tool_id: None,
+        }];
+
+        let payload = client
+            .prepare_payload(
+                settings.clone(),
+                cache_entries,
+                sublime_inputs,
+            )
+            .unwrap();
+
+        let request = client
+            .prepare_request(settings.clone(), payload)
+            .unwrap();
+
+        assert_eq!(request.url().as_str(), url);
     }
 
     #[tokio::test]

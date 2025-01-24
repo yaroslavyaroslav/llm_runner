@@ -21,7 +21,7 @@ pub struct LlmRunner;
 impl LlmRunner {
     pub(crate) async fn execute(
         provider: NetworkClient,
-        cacher: &Cacher,
+        cacher: Arc<Cacher>,
         contents: Vec<SublimeInputContent>,
         assistant_settings: AssistantSettings,
         sender: Sender<String>,

@@ -21,18 +21,23 @@ pub struct LlmRunner;
 impl LlmRunner {
     pub(crate) async fn execute(
         provider: NetworkClient,
-        cacher: &Cacher,
+        cacher: Arc<Mutex<Cacher>>,
         contents: Vec<SublimeInputContent>,
         assistant_settings: AssistantSettings,
         sender: Arc<Mutex<Sender<String>>>,
         cancel_flag: Arc<AtomicBool>,
         store: bool,
     ) -> Result<()> {
-        let cache_entries: Vec<CacheEntry> = cacher.read_entries()?;
+        let cache_entries: Vec<CacheEntry> = cacher
+            .lock()
+            .await
+            .read_entries()?;
 
         if store {
             for entry in &contents {
                 cacher
+                    .lock()
+                    .await
                     .write_entry(&CacheEntry::from(entry.clone()))
                     .ok();
             }
@@ -69,6 +74,8 @@ impl LlmRunner {
         {
             if let Ok(message) = result {
                 cacher
+                    .lock()
+                    .await
                     .write_entry(&CacheEntry::from(
                         message.choices[0]
                             .message
@@ -90,11 +97,14 @@ impl LlmRunner {
             .await
         } else {
             if store {
-                cacher.write_entry(&CacheEntry::from(
-                    result?.choices[0]
-                        .message
-                        .clone(),
-                ))
+                cacher
+                    .lock()
+                    .await
+                    .write_entry(&CacheEntry::from(
+                        result?.choices[0]
+                            .message
+                            .clone(),
+                    ))
             } else {
                 Ok(())
             }

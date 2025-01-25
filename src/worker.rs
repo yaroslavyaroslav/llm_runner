@@ -26,6 +26,7 @@ pub struct OpenAIWorker {
     pub(crate) proxy: Option<String>,
     pub(crate) cacher_path: String,
 
+    cacher: Arc<Mutex<Cacher>>,
     cancel_signal: Arc<AtomicBool>,
 }
 
@@ -38,7 +39,8 @@ impl OpenAIWorker {
             contents: vec![],
             assistant_settings: None,
             proxy,
-            cacher_path: path,
+            cacher_path: path.clone(),
+            cacher: Arc::new(Mutex::new(Cacher::new(&path))),
             cancel_signal: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -54,7 +56,6 @@ impl OpenAIWorker {
         self.view_id = Some(view_id);
         self.prompt_mode = Some(prompt_mode.clone());
         self.assistant_settings = Some(assistant_settings.clone());
-        let cacher = Cacher::new(self.cacher_path.as_str());
         let provider = NetworkClient::new(self.proxy.clone());
 
         let (tx, rx) = mpsc::channel(view_id);
@@ -66,7 +67,7 @@ impl OpenAIWorker {
 
         let result = LlmRunner::execute(
             provider,
-            &cacher,
+            Arc::clone(&self.cacher),
             contents,
             assistant_settings,
             Arc::new(Mutex::new(tx)),

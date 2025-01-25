@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 from typing import List
 
 import pytest
@@ -91,6 +92,12 @@ def test_sublime_input_content():
 def test_python_worker_plain_run():
     worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
 
+    some_list: List[str] = []
+
+    def my_handler_1(data: str) -> None:
+        some_list.append(data)
+        print(f'Received data: {data}')
+
     contents = SublimeInputContent(
         InputKind.ViewSelection, 'This is the test request, provide me 3 words response'
     )
@@ -108,13 +115,21 @@ def test_python_worker_plain_run():
 
     settings = AssistantSettings(dicttt)
 
-    worker.run(1, PromptMode.View, [contents], settings, my_handler)
+    worker.run(1, PromptMode.View, [contents], settings, my_handler_1)
 
-    # assert False
+    time.sleep(2)
+
+    assert some_list
 
 
 def test_python_worker_sse_run():
     worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
+
+    some_list: List[str] = []
+
+    def my_handler_1(data: str) -> None:
+        some_list.append(data)
+        print(f'Received data: {data}')
 
     contents = SublimeInputContent(
         InputKind.ViewSelection, 'This is the test request, provide me 30 words response'
@@ -133,13 +148,21 @@ def test_python_worker_sse_run():
 
     settings = AssistantSettings(dicttt)
 
-    worker.run_sync(1, PromptMode.View, [contents], settings, my_handler)
+    worker.run_sync(1, PromptMode.View, [contents], settings, my_handler_1)
 
-    # assert False
+    time.sleep(2)
+
+    assert some_list
 
 
 def test_python_worker_sse_function_run():
     worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
+
+    some_list: List[str] = []
+
+    def my_handler_1(data: str) -> None:
+        some_list.append(data)
+        print(f'Received data: {data}')
 
     contents = SublimeInputContent(
         InputKind.ViewSelection, 'This is the test request, call the functions available'
@@ -160,9 +183,11 @@ def test_python_worker_sse_function_run():
 
     settings = AssistantSettings(dicttt)
 
-    worker.run(1, PromptMode.View, [contents], settings, my_handler)
+    worker.run(1, PromptMode.View, [contents], settings, my_handler_1)
 
-#     # assert False
+    time.sleep(2)
+
+    assert some_list
 
 
 @pytest.mark.asyncio

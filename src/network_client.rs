@@ -182,12 +182,17 @@ impl NetworkClient {
                 .and_then(|c| c.as_array())
                 .and_then(|arr| arr.first())
                 .and_then(|first| first.as_object())
-                .and_then(|fisr_object| obtain_delta(fisr_object))
+                .and_then(|fisr_object| fisr_object.get("message"))
+                .and_then(|message| message.as_object())
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
             {
                 let cloned_sender = sender.clone();
+                let string = content.to_string();
+
                 tokio::spawn(async move {
                     cloned_sender
-                        .send(content)
+                        .send(string)
                         .await
                         .ok()
                 });

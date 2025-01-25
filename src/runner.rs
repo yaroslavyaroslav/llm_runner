@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::Result;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::{mpsc::Sender, Mutex};
 
 use crate::{
     cacher::Cacher,
@@ -24,7 +24,7 @@ impl LlmRunner {
         cacher: &Cacher,
         contents: Vec<SublimeInputContent>,
         assistant_settings: AssistantSettings,
-        sender: Sender<String>,
+        sender: Arc<Mutex<Sender<String>>>,
         cancel_flag: Arc<AtomicBool>,
         store: bool,
     ) -> Result<()> {
@@ -50,7 +50,7 @@ impl LlmRunner {
         let result = provider
             .execute_request::<OpenAIResponse>(
                 request,
-                sender.clone(),
+                Arc::clone(&sender),
                 Arc::clone(&cancel_flag),
                 assistant_settings.stream,
             )

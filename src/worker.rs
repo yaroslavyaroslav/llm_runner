@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use anyhow::Result;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 
 use crate::{
     cacher::Cacher,
@@ -69,7 +69,7 @@ impl OpenAIWorker {
             &cacher,
             contents,
             assistant_settings,
-            tx,
+            Arc::new(Mutex::new(tx)),
             Arc::clone(&self.cancel_signal),
             store,
         )

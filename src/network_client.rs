@@ -13,7 +13,7 @@ use reqwest::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
-use tokio::sync::mpsc::Sender;
+use tokio::sync::{mpsc::Sender, Mutex};
 
 use crate::{
     openai_network_types::OpenAICompletionRequest,
@@ -88,7 +88,7 @@ impl NetworkClient {
     pub async fn execute_request<T>(
         &self,
         request: Request,
-        sender: Sender<String>,
+        sender: Arc<Mutex<Sender<String>>>,
         cancel_flag: Arc<AtomicBool>,
         stream: bool,
     ) -> Result<T>
@@ -132,9 +132,11 @@ impl NetworkClient {
                                 .and_then(|first| first.as_object())
                                 .and_then(|fisr_object| obtain_delta(fisr_object))
                             {
-                                let cloned_sender = sender.clone();
+                                let cloned_sender = Arc::clone(&sender);
                                 tokio::spawn(async move {
                                     cloned_sender
+                                        .lock()
+                                        .await
                                         .send(content)
                                         .await
                                         .ok()
@@ -148,11 +150,12 @@ impl NetworkClient {
                     }
                 }
                 if cancel_flag.load(Ordering::SeqCst) {
-                    let cloned_sender = sender.clone();
+                    let cloned_sender = Arc::clone(&sender);
 
                     tokio::spawn(async move {
                         cloned_sender
-                            .clone()
+                            .lock()
+                            .await
                             .send("\n[ABORTED]".to_string())
                             .await
                             .ok()
@@ -187,11 +190,13 @@ impl NetworkClient {
                 .and_then(|m| m.get("content"))
                 .and_then(|c| c.as_str())
             {
-                let cloned_sender = sender.clone();
+                let cloned_sender = Arc::clone(&sender);
                 let string = content.to_string();
 
                 tokio::spawn(async move {
                     cloned_sender
+                        .lock()
+                        .await
                         .send(string)
                         .await
                         .ok()
@@ -484,7 +489,7 @@ mod tests {
         let response: Result<TestResponse, _> = client
             .execute_request(
                 request,
-                tx,
+                Arc::new(Mutex::new(tx)),
                 Arc::new(AtomicBool::new(false)),
                 settings.stream,
             )
@@ -562,7 +567,7 @@ mod tests {
         let result = client
             .execute_request::<Map<String, Value>>(
                 request,
-                tx,
+                Arc::new(Mutex::new(tx)),
                 Arc::new(AtomicBool::new(false)),
                 settings.stream,
             )
@@ -643,7 +648,7 @@ mod tests {
         let result = client
             .execute_request::<Map<String, Value>>(
                 request,
-                tx,
+                Arc::new(Mutex::new(tx)),
                 Arc::new(AtomicBool::new(false)),
                 settings.stream,
             )
@@ -747,7 +752,7 @@ mod tests {
         let result: Map<String, Value> = client
             .execute_request::<Map<String, Value>>(
                 request,
-                tx,
+                Arc::new(Mutex::new(tx)),
                 Arc::new(AtomicBool::new(false)),
                 settings.stream,
             )
@@ -854,7 +859,7 @@ mod tests {
             let response = client
                 .execute_request::<Map<String, Value>>(
                     request,
-                    tx,
+                    Arc::new(Mutex::new(tx)),
                     cancel_flag_clone,
                     settings.stream,
                 )

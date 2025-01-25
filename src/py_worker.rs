@@ -1,10 +1,10 @@
 use std::{
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, Mutex},
     thread,
 };
 
 use pyo3::prelude::*;
-use tokio::{runtime::Runtime, sync::Mutex};
+use tokio::runtime::Runtime;
 
 use crate::{
     cacher::Cacher,
@@ -69,7 +69,7 @@ impl PythonWorker {
             let result = rt.block_on(async move {
                 worker_clone
                     .lock()
-                    .await
+                    .unwrap()
                     .run(
                         view_id,
                         contents,
@@ -87,22 +87,10 @@ impl PythonWorker {
     }
 
     pub fn cancel(&mut self) {
-        let worker_clone = Arc::clone(&self.worker);
-        tokio::spawn(async move {
-            let worker = worker_clone.lock().await;
-            worker.cancel();
-        });
-    }
-
-    pub fn is_alive(&self) -> bool {
-        let worker_clone = Arc::clone(&self.worker);
-        let rt = Runtime::new().expect("Failed to create runtime");
-        rt.block_on(async {
-            let worker = worker_clone.lock().await;
-            return worker
-                .is_alive
-                .load(Ordering::SeqCst);
-        })
+        self.worker
+            .lock()
+            .unwrap()
+            .cancel();
     }
 
     fn run_sync(
@@ -118,7 +106,7 @@ impl PythonWorker {
         let _ = rt.block_on(async move {
             worker_clone
                 .lock()
-                .await
+                .unwrap()
                 .run(
                     view_id,
                     contents,

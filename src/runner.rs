@@ -21,7 +21,7 @@ pub struct LlmRunner;
 impl LlmRunner {
     pub(crate) async fn execute(
         provider: NetworkClient,
-        cacher: Arc<Cacher>,
+        cacher: &Cacher,
         contents: Vec<SublimeInputContent>,
         assistant_settings: AssistantSettings,
         sender: Sender<String>,
@@ -31,14 +31,11 @@ impl LlmRunner {
         let cache_entries: Vec<CacheEntry> = cacher.read_entries()?;
 
         if store {
-            contents
-                .iter()
-                .filter(|entry| entry.input_kind != InputKind::Sheet)
-                .for_each(|entry| {
-                    cacher
-                        .write_entry(&CacheEntry::from(entry.clone()))
-                        .ok();
-                });
+            for entry in &contents {
+                cacher
+                    .write_entry(&CacheEntry::from(entry.clone()))
+                    .ok();
+            }
         }
 
         let payload = provider.prepare_payload(

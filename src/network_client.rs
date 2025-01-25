@@ -133,9 +133,12 @@ impl NetworkClient {
                                 .and_then(|fisr_object| obtain_delta(fisr_object))
                             {
                                 let cloned_sender = sender.clone();
-                                let _ = cloned_sender
-                                    .send(content)
-                                    .await;
+                                tokio::spawn(async move {
+                                    cloned_sender
+                                        .send(content)
+                                        .await
+                                        .ok()
+                                });
                             }
 
                             if cancel_flag.load(Ordering::SeqCst) {

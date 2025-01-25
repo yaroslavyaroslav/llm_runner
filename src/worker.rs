@@ -26,9 +26,7 @@ pub struct OpenAIWorker {
     pub(crate) proxy: Option<String>,
     pub(crate) cacher_path: String,
 
-    cacher: Arc<Cacher>,
     cancel_signal: Arc<AtomicBool>,
-    pub(crate) is_alive: Arc<AtomicBool>,
 }
 
 impl OpenAIWorker {
@@ -40,10 +38,8 @@ impl OpenAIWorker {
             contents: vec![],
             assistant_settings: None,
             proxy,
-            cacher_path: path.clone(),
-            cacher: Arc::new(Cacher::new(&path.as_str())),
+            cacher_path: path,
             cancel_signal: Arc::new(AtomicBool::new(false)),
-            is_alive: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -58,7 +54,7 @@ impl OpenAIWorker {
         self.view_id = Some(view_id);
         self.prompt_mode = Some(prompt_mode.clone());
         self.assistant_settings = Some(assistant_settings.clone());
-
+        let cacher = Cacher::new(self.cacher_path.as_str());
         let provider = NetworkClient::new(self.proxy.clone());
 
         let (tx, rx) = mpsc::channel(view_id);
@@ -68,27 +64,20 @@ impl OpenAIWorker {
             PromptMode::Phantom => false,
         };
 
-        self.is_alive
-            .store(true, Ordering::SeqCst);
-
-        let result = tokio::spawn(LlmRunner::execute(
+        let result = LlmRunner::execute(
             provider,
-            Arc::clone(&self.cacher),
+            &cacher,
             contents,
             assistant_settings,
             tx,
             Arc::clone(&self.cancel_signal),
             store,
-        ));
-
-        let _ = tokio::spawn(StreamHandler::handle_stream_with(
-            rx, handler,
-        ))
+        )
         .await;
 
-        self.is_alive
-            .store(false, Ordering::SeqCst);
-        result.await.unwrap()
+        StreamHandler::handle_stream_with(rx, handler).await;
+
+        result
     }
 
     pub fn cancel(&self) {

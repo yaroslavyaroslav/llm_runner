@@ -321,7 +321,7 @@ async fn test_remote_server_complerion_cancelled() {
         }),
     );
 
-    worker.cancel().await;
+    worker.cancel();
 
     let result = future.await;
 

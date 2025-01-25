@@ -133,33 +133,29 @@ impl NetworkClient {
                                 .and_then(|fisr_object| obtain_delta(fisr_object))
                             {
                                 let cloned_sender = Arc::clone(&sender);
-                                tokio::spawn(async move {
-                                    cloned_sender
-                                        .lock()
-                                        .await
-                                        .send(content)
-                                        .await
-                                        .ok()
-                                });
-                            }
 
-                            if cancel_flag.load(Ordering::SeqCst) {
-                                break;
+                                cloned_sender
+                                    .lock()
+                                    .await
+                                    .send(content)
+                                    .await
+                                    .ok();
                             }
                         }
+                    }
+                    if cancel_flag.load(Ordering::SeqCst) {
+                        break;
                     }
                 }
                 if cancel_flag.load(Ordering::SeqCst) {
                     let cloned_sender = Arc::clone(&sender);
 
-                    tokio::spawn(async move {
-                        cloned_sender
-                            .lock()
-                            .await
-                            .send("\n[ABORTED]".to_string())
-                            .await
-                            .ok()
-                    });
+                    cloned_sender
+                        .lock()
+                        .await
+                        .send("\n[ABORTED]".to_string())
+                        .await
+                        .ok();
                 }
 
                 drop(sender);
@@ -193,14 +189,12 @@ impl NetworkClient {
                 let cloned_sender = Arc::clone(&sender);
                 let string = content.to_string();
 
-                tokio::spawn(async move {
-                    cloned_sender
-                        .lock()
-                        .await
-                        .send(string)
-                        .await
-                        .ok()
-                });
+                cloned_sender
+                    .lock()
+                    .await
+                    .send(string)
+                    .await
+                    .ok();
             }
             Ok(serde_json::from_value::<T>(json_body)?)
         } else {

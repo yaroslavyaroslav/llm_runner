@@ -85,35 +85,14 @@ impl PythonWorker {
     }
 
     pub fn cancel(&mut self) {
-        // use std::io::Write;
-        // let mut file = std::fs::OpenOptions::new()
-        //     .append(true)
-        //     .create(true)
-        //     .open("/tmp/plugin_log.log")
-        //     .unwrap();
-
-        // writeln!(file, "{}", "log cancel event");
-        let worker = Arc::clone(&self.worker);
-        let rt = Runtime::new().expect("Failed to create runtime");
-        rt.block_on(async { worker.cancel().await })
+        // let worker = Arc::clone(&self.worker);
+        self.worker.cancel()
     }
 
     pub fn is_alive(&self) -> bool {
-        // use std::io::Write;
-        // let mut file = std::fs::OpenOptions::new()
-        //     .append(true)
-        //     .create(true)
-        //     .open("/tmp/plugin_log.log")
-        //     .unwrap();
-
-        // writeln!(file, "{}", "log is_alive event");
-        let worker = Arc::clone(&self.worker);
-        let rt = Runtime::new().expect("Failed to create runtime");
-        rt.block_on(async {
-            worker
-                .is_alive
-                .load(Ordering::Relaxed)
-        })
+        self.worker
+            .is_alive
+            .load(Ordering::Relaxed)
     }
 
     fn run_sync(

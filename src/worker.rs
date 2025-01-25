@@ -93,7 +93,7 @@ impl OpenAIWorker {
         handler
     }
 
-    pub async fn cancel(&self) {
+    pub fn cancel(&self) {
         self.cancel_signal
             .store(true, Ordering::SeqCst);
     }

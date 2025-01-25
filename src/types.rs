@@ -102,6 +102,7 @@ pub enum InputKind {
     BuildOutputPanel,
     LspOutputPanel,
     Terminus,
+    Sheet,
     FunctionResult,
     AssistantResponse,
 }

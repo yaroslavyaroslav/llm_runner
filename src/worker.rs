@@ -4,7 +4,10 @@ use std::sync::{
 };
 
 use anyhow::Result;
-use tokio::sync::{mpsc, Mutex};
+use tokio::{
+    join,
+    sync::{mpsc, Mutex},
+};
 
 use crate::{
     cacher::Cacher,
@@ -65,7 +68,7 @@ impl OpenAIWorker {
             PromptMode::Phantom => false,
         };
 
-        let result = LlmRunner::execute(
+        let result_fut = LlmRunner::execute(
             provider,
             Arc::clone(&self.cacher),
             contents,
@@ -73,12 +76,13 @@ impl OpenAIWorker {
             Arc::new(Mutex::new(tx)),
             Arc::clone(&self.cancel_signal),
             store,
-        )
-        .await;
+        );
 
-        StreamHandler::handle_stream_with(rx, handler).await;
+        let handler_fut = StreamHandler::handle_stream_with(rx, handler);
 
-        result
+        let _result = join!(result_fut, handler_fut);
+
+        Ok(())
     }
 
     pub fn cancel(&self) {

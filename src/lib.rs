@@ -1,3 +1,4 @@
+#![feature(async_closure, future_join)]
 mod cacher;
 mod network_client;
 mod openai_network_types;

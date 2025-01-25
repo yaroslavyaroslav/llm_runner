@@ -35,11 +35,13 @@ impl LlmRunner {
 
         if store {
             for entry in &contents {
-                cacher
-                    .lock()
-                    .await
-                    .write_entry(&CacheEntry::from(entry.clone()))
-                    .ok();
+                if entry.input_kind != InputKind::Sheet {
+                    cacher
+                        .lock()
+                        .await
+                        .write_entry(&CacheEntry::from(entry.clone()))
+                        .ok();
+                }
             }
         }
 

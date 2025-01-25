@@ -98,6 +98,7 @@ impl From<AssistantMessage> for CacheEntry {
 #[serde(rename_all = "snake_case")]
 pub enum InputKind {
     ViewSelection,
+    Sheet,
     Command,
     BuildOutputPanel,
     LspOutputPanel,

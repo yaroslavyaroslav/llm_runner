@@ -31,11 +31,14 @@ impl LlmRunner {
         let cache_entries: Vec<CacheEntry> = cacher.read_entries()?;
 
         if store {
-            for entry in &contents {
-                cacher
-                    .write_entry(&CacheEntry::from(entry.clone()))
-                    .ok();
-            }
+            contents
+                .iter()
+                .filter(|entry| entry.input_kind != InputKind::Sheet)
+                .for_each(|entry| {
+                    cacher
+                        .write_entry(&CacheEntry::from(entry.clone()))
+                        .ok();
+                });
         }
 
         let payload = provider.prepare_payload(

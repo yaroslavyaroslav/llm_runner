@@ -28,6 +28,7 @@ pub struct OpenAIWorker {
 
     cacher: Arc<Cacher>,
     cancel_signal: Arc<AtomicBool>,
+    pub(crate) is_alive: Arc<AtomicBool>,
 }
 
 impl OpenAIWorker {
@@ -42,6 +43,7 @@ impl OpenAIWorker {
             cacher_path: path.clone(),
             cacher: Arc::new(Cacher::new(&path.as_str())),
             cancel_signal: Arc::new(AtomicBool::new(false)),
+            is_alive: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -66,6 +68,9 @@ impl OpenAIWorker {
             PromptMode::Phantom => false,
         };
 
+        self.is_alive
+            .store(true, Ordering::SeqCst);
+
         let result = tokio::spawn(LlmRunner::execute(
             provider,
             Arc::clone(&self.cacher),
@@ -81,6 +86,8 @@ impl OpenAIWorker {
         ))
         .await;
 
+        self.is_alive
+            .store(false, Ordering::SeqCst);
         result.await.unwrap()
     }
 

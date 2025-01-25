@@ -4,7 +4,10 @@ use std::sync::{
 };
 
 use anyhow::Result;
-use tokio::sync::mpsc;
+use tokio::{
+    join,
+    sync::{mpsc, Mutex},
+};
 
 use crate::{
     cacher::Cacher,
@@ -24,13 +27,15 @@ pub struct OpenAIWorker {
     pub(crate) contents: Vec<SublimeInputContent>,
     pub(crate) assistant_settings: Option<AssistantSettings>,
     pub(crate) proxy: Option<String>,
-    pub(crate) cacher_path: Option<String>,
+    pub(crate) cacher_path: String,
 
+    cacher: Arc<Mutex<Cacher>>,
     cancel_signal: Arc<AtomicBool>,
+    pub(crate) is_alive: Arc<AtomicBool>,
 }
 
 impl OpenAIWorker {
-    pub fn new(window_id: usize, path: Option<String>, proxy: Option<String>) -> Self {
+    pub fn new(window_id: usize, path: String, proxy: Option<String>) -> Self {
         Self {
             window_id,
             view_id: None,
@@ -38,44 +43,54 @@ impl OpenAIWorker {
             contents: vec![],
             assistant_settings: None,
             proxy,
-            cacher_path: path,
+            cacher_path: path.clone(),
+            cacher: Arc::new(Mutex::new(Cacher::new(&path))),
             cancel_signal: Arc::new(AtomicBool::new(false)),
+            is_alive: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub async fn run(
-        &mut self,
+        &self,
         view_id: usize,
         contents: Vec<SublimeInputContent>,
         prompt_mode: PromptMode,
         assistant_settings: AssistantSettings,
         handler: Arc<dyn Fn(String) + Send + Sync + 'static>,
     ) -> Result<()> {
-        self.view_id = Some(view_id);
-        self.prompt_mode = Some(prompt_mode);
-        self.assistant_settings = Some(assistant_settings.clone());
-        let cacher = Cacher::new(
-            self.cacher_path
-                .as_mut()
-                .map(|s| s.as_str()),
-        );
+        self.is_alive
+            .store(true, Ordering::SeqCst);
+
+        // self.view_id = Some(view_id);
+        // self.prompt_mode = Some(prompt_mode.clone());
+        // self.assistant_settings = Some(assistant_settings.clone());
         let provider = NetworkClient::new(self.proxy.clone());
 
         let (tx, rx) = mpsc::channel(view_id);
 
-        let result = LlmRunner::execute(
+        let store = match prompt_mode {
+            PromptMode::View => true,
+            PromptMode::Phantom => false,
+        };
+
+        let result_fut = LlmRunner::execute(
             provider,
-            &cacher,
+            Arc::clone(&self.cacher),
             contents,
             assistant_settings,
-            tx,
+            Arc::new(Mutex::new(tx)),
             Arc::clone(&self.cancel_signal),
-        )
-        .await;
+            store,
+        );
 
-        StreamHandler::handle_stream_with(rx, handler).await;
+        let handler_fut = StreamHandler::handle_stream_with(rx, handler);
 
-        result
+        let (handler, _) = join!(result_fut, handler_fut);
+
+        self.is_alive
+            .store(false, Ordering::SeqCst);
+
+        handler
     }
 
     pub fn cancel(&self) {

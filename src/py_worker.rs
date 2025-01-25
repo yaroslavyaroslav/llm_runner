@@ -1,14 +1,14 @@
 use std::{
-    sync::{Arc, Mutex},
+    sync::{atomic::Ordering, Arc},
     thread,
 };
 
 use pyo3::prelude::*;
-use strum_macros::{Display, EnumString};
 use tokio::runtime::Runtime;
 
 use crate::{
-    types::{AssistantSettings, PromptMode, SublimeInputContent},
+    cacher::Cacher,
+    types::{AssistantSettings, CacheEntry, PromptMode, SublimeInputContent, SublimeOutputContent},
     worker::OpenAIWorker,
 };
 
@@ -21,7 +21,7 @@ pub struct PythonWorker {
     #[pyo3(get)]
     pub proxy: Option<String>,
 
-    worker: Arc<Mutex<OpenAIWorker>>,
+    worker: Arc<OpenAIWorker>,
 }
 
 struct Function {
@@ -43,14 +43,14 @@ impl Function {
 #[pymethods]
 impl PythonWorker {
     #[new]
-    #[pyo3(signature = (window_id, path=None, proxy=None))]
-    fn new(window_id: usize, path: Option<String>, proxy: Option<String>) -> Self {
+    #[pyo3(signature = (window_id, path, proxy=None))]
+    fn new(window_id: usize, path: String, proxy: Option<String>) -> Self {
         PythonWorker {
             window_id,
             proxy: proxy.clone(),
-            worker: Arc::new(Mutex::new(OpenAIWorker::new(
+            worker: Arc::new(OpenAIWorker::new(
                 window_id, path, proxy,
-            ))),
+            )),
         }
     }
 
@@ -58,7 +58,7 @@ impl PythonWorker {
     fn run(
         &mut self,
         view_id: usize,
-        prompt_mode: PythonPromptMode,
+        prompt_mode: PromptMode,
         contents: Vec<SublimeInputContent>,
         assistant_settings: AssistantSettings,
         handler: PyObject,
@@ -68,12 +68,10 @@ impl PythonWorker {
         thread::spawn(move || {
             let result = rt.block_on(async move {
                 worker_clone
-                    .lock()
-                    .unwrap()
                     .run(
                         view_id,
                         contents,
-                        PromptMode::from(prompt_mode),
+                        prompt_mode,
                         assistant_settings,
                         Function::new(handler).func,
                     )
@@ -86,60 +84,97 @@ impl PythonWorker {
         Ok(())
     }
 
-    pub fn cancel(&mut self) {
+    pub fn cancel(&mut self) { self.worker.cancel() }
+
+    pub fn is_alive(&self) -> bool {
         self.worker
-            .lock()
-            .unwrap()
-            .cancel();
+            .is_alive
+            .load(Ordering::Relaxed)
+    }
+
+    fn run_sync(
+        &mut self,
+        view_id: usize,
+        prompt_mode: PromptMode,
+        contents: Vec<SublimeInputContent>,
+        assistant_settings: AssistantSettings,
+        handler: PyObject,
+    ) -> PyResult<()> {
+        let rt = Runtime::new().expect("Failed to create runtime");
+        let worker_clone = self.worker.clone();
+        let _ = rt.block_on(async move {
+            worker_clone
+                .run(
+                    view_id,
+                    contents,
+                    prompt_mode,
+                    assistant_settings,
+                    Function::new(handler).func,
+                )
+                .await
+        });
+
+        Ok(())
     }
 }
 
-#[pyclass(eq, eq_int)]
-#[derive(EnumString, Display, Debug, Clone, Copy, PartialEq)]
-pub enum PythonPromptMode {
-    #[strum(serialize = "view")]
-    View,
+#[pyfunction]
+#[allow(unused)]
+#[pyo3(signature = (path))]
+pub fn read_all_cache(path: &str) -> PyResult<Vec<SublimeOutputContent>> {
+    let cacher = Cacher::new(path);
+    let cache_entries = cacher
+        .read_entries::<CacheEntry>()
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))?;
 
-    #[strum(serialize = "phantom")]
-    Phantom,
+    let vec = cache_entries
+        .iter()
+        .map(SublimeOutputContent::from)
+        .collect();
+
+    Ok(vec)
 }
 
-impl From<PromptMode> for PythonPromptMode {
-    fn from(mode: PromptMode) -> Self {
-        match mode {
-            PromptMode::View => PythonPromptMode::View,
-            PromptMode::Phantom => PythonPromptMode::Phantom,
-        }
-    }
+#[pyfunction]
+#[allow(unused)]
+#[pyo3(signature = (path, content))]
+pub fn write_to_cache(path: &str, content: SublimeInputContent) -> PyResult<()> {
+    let entry = CacheEntry::from(content);
+
+    let cacher = Cacher::new(path);
+    cacher.write_entry::<CacheEntry>(&entry);
+    Ok(())
 }
 
-impl From<PythonPromptMode> for PromptMode {
-    fn from(py_mode: PythonPromptMode) -> Self {
-        match py_mode {
-            PythonPromptMode::View => PromptMode::View,
-            PythonPromptMode::Phantom => PromptMode::Phantom,
-        }
-    }
+#[pyfunction]
+#[allow(unused)]
+#[pyo3(signature = (path))]
+pub fn read_model(path: &str) -> PyResult<AssistantSettings> {
+    let cacher = Cacher::new(path);
+    let model = cacher
+        .read_model::<AssistantSettings>()
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))?;
+
+    Ok(model)
 }
 
-#[pymethods]
-impl PythonPromptMode {
-    #[staticmethod]
-    pub fn from_str(s: &str) -> Option<PythonPromptMode> {
-        match s.to_lowercase().as_str() {
-            "view" => Some(PythonPromptMode::View),
-            "phantom" => Some(PythonPromptMode::Phantom),
-            _ => None, // Handle invalid input by returning None
-        }
-    }
+#[pyfunction]
+#[allow(unused)]
+#[pyo3(signature = (path, model))]
+pub fn write_model(path: &str, model: AssistantSettings) -> PyResult<()> {
+    println!("path in rust: {}", path);
+    let cacher = Cacher::new(path);
+    cacher.write_model::<AssistantSettings>(&model);
+    Ok(())
+}
 
-    #[staticmethod]
-    pub fn to_str(py_mode: PythonPromptMode) -> String {
-        match py_mode {
-            PythonPromptMode::View => "view".to_string(),
-            PythonPromptMode::Phantom => "phantom".to_string(),
-        }
-    }
+#[pyfunction]
+#[allow(unused)]
+#[pyo3(signature = (path))]
+pub fn drop_all(path: &str) -> PyResult<()> {
+    let cacher = Cacher::new(path);
+    cacher.drop_all();
+    Ok(())
 }
 
 #[cfg(test)]

@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -17,50 +17,43 @@ pub struct Cacher {
 
 #[allow(unused)]
 impl Cacher {
-    pub fn new(name: Option<&str>) -> Self {
+    pub fn new(name: &str) -> Self {
         let cache_dir = Cacher::sublime_cache();
 
         use std::path::{Path, PathBuf};
 
-        let (history_file, current_model_file, tokens_count_file) = if let Some(input) = name {
-            if Path::new(input).is_absolute() {
-                let base_path = PathBuf::from(input);
-                (
-                    base_path
-                        .join("_chat_history.json")
-                        .to_string_lossy()
-                        .into_owned(),
-                    base_path
-                        .join("_current_assistant.json")
-                        .to_string_lossy()
-                        .into_owned(),
-                    base_path
-                        .join("_tokens_count.json")
-                        .to_string_lossy()
-                        .into_owned(),
-                )
-            } else {
-                let name_prefix = format!("{}_", input);
-                (
-                    format!(
-                        "{}/{}chat_history.json",
-                        cache_dir, name_prefix
-                    ),
-                    format!(
-                        "{}/{}current_assistant.json",
-                        cache_dir, name_prefix
-                    ),
-                    format!(
-                        "{}/{}tokens_count.json",
-                        cache_dir, name_prefix
-                    ),
-                )
-            }
-        } else {
+        // TODO: Seems that this conditioning is useless and should be removed by expecting the absolute path only.
+        let (history_file, current_model_file, tokens_count_file) = if Path::new(name).is_absolute() {
+            let base_path = PathBuf::from(name);
             (
-                format!("{}/chat_history.json", cache_dir),
-                format!("{}/current_assistant.json", cache_dir),
-                format!("{}/tokens_count.json", cache_dir),
+                base_path
+                    .join("chat_history.jl")
+                    .to_string_lossy()
+                    .into_owned(),
+                base_path
+                    .join("current_assistant.json")
+                    .to_string_lossy()
+                    .into_owned(),
+                base_path
+                    .join("tokens_count.json")
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+        } else {
+            let name_prefix = format!("{}_", name);
+            (
+                format!(
+                    "{}/{}chat_history.jl",
+                    cache_dir, name_prefix
+                ),
+                format!(
+                    "{}/{}current_assistant.json",
+                    cache_dir, name_prefix
+                ),
+                format!(
+                    "{}/{}tokens_count.json",
+                    cache_dir, name_prefix
+                ),
             )
         };
 
@@ -71,7 +64,7 @@ impl Cacher {
         }
     }
 
-    fn create_file_if_not_exists(&self, path: &str) -> Result<()> {
+    fn create_file_if_not_exists(path: &str) -> Result<()> {
         if !Path::new(path).exists() {
             File::create(path)?;
             println!("File created successfully.");
@@ -81,7 +74,7 @@ impl Cacher {
 
     pub fn read_entries<T>(&self) -> Result<Vec<T>>
     where T: for<'de> Deserialize<'de> {
-        self.create_file_if_not_exists(&self.history_file);
+        Self::create_file_if_not_exists(&self.history_file);
 
         let file = match File::open(&self.history_file) {
             Ok(file) => file,
@@ -121,6 +114,32 @@ impl Cacher {
         Ok(())
     }
 
+    pub fn write_model<T: Serialize>(&self, model: &T) -> Result<()> {
+        let model_json = serde_json::to_string(model)?;
+
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&self.current_model_file)?;
+
+        writeln!(file, "{}", model_json)?;
+
+        Ok(())
+    }
+
+    pub fn read_model<T: DeserializeOwned>(&self) -> Result<T> {
+        Self::create_file_if_not_exists(&self.current_model_file);
+
+        let file = File::open(&self.current_model_file)?;
+        let reader = std::io::BufReader::new(file);
+
+        // Read the file and deserialize it into the desired type `T`
+        let model: T = serde_json::from_reader(reader)?;
+
+        Ok(model)
+    }
+
     pub fn drop_first(&self, lines_num: usize) -> Result<()> {
         let file = File::open(&self.history_file)?;
 
@@ -137,6 +156,11 @@ impl Cacher {
             writeln!(file, "{}", line)?;
         }
 
+        Ok(())
+    }
+
+    pub fn drop_all(&self) -> Result<()> {
+        let mut file = File::create(&self.history_file)?;
         Ok(())
     }
 
@@ -242,9 +266,7 @@ mod tests {
             tokens_count_file: "".to_string(),
         };
 
-        cacher
-            .create_file_if_not_exists(&cacher.history_file)
-            .ok();
+        Cacher::create_file_if_not_exists(&cacher.history_file).ok();
 
         let read_entries: Vec<TestEntry> = cacher.read_entries().unwrap();
 
@@ -329,6 +351,7 @@ mod tests {
             read_entries[0],
             CacheEntry {
                 content: Some("Test request acknowledged.".to_string()),
+                thinking: None,
                 role: Roles::Assistant,
                 tool_call: None,
                 path: None,
@@ -342,6 +365,7 @@ mod tests {
             read_entries[1],
             CacheEntry {
                 content: Some("This is the test request, provide me 3 words response".to_string()),
+                thinking: None,
                 role: Roles::User,
                 tool_call: None,
                 path: None,
@@ -355,6 +379,7 @@ mod tests {
             read_entries[2],
             CacheEntry {
                 content: None,
+                thinking: None,
                 role: Roles::Assistant,
                 tool_call: Some(ToolCall {
                     id: "call_f4Ixx2ruFvbbqifrMKZ8Cxju".to_string(),
@@ -374,6 +399,7 @@ mod tests {
             read_entries[3],
             CacheEntry {
                 content: Some("created".to_string()),
+                thinking: None,
                 role: Roles::Tool,
                 tool_call: None,
                 path: None,

@@ -13,7 +13,7 @@ use reqwest::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
-use tokio::sync::mpsc::Sender;
+use tokio::sync::{mpsc::Sender, Mutex};
 
 use crate::{
     openai_network_types::OpenAICompletionRequest,
@@ -69,7 +69,7 @@ impl NetworkClient {
         settings: AssistantSettings,
         json_payload: String,
     ) -> Result<Request> {
-        let url = settings.url.to_string();
+        let url = settings.url;
         let mut headers = self.headers.clone();
         if let Some(token) = settings.token {
             let auth_header = format!("Bearer {}", token);
@@ -88,7 +88,7 @@ impl NetworkClient {
     pub async fn execute_request<T>(
         &self,
         request: Request,
-        sender: Sender<String>,
+        sender: Arc<Mutex<Sender<String>>>,
         cancel_flag: Arc<AtomicBool>,
         stream: bool,
     ) -> Result<T>
@@ -132,31 +132,30 @@ impl NetworkClient {
                                 .and_then(|first| first.as_object())
                                 .and_then(|fisr_object| obtain_delta(fisr_object))
                             {
-                                let cloned_sender = sender.clone();
-                                tokio::spawn(async move {
-                                    cloned_sender
-                                        .send(content)
-                                        .await
-                                        .ok()
-                                });
-                            }
+                                let cloned_sender = Arc::clone(&sender);
 
-                            if cancel_flag.load(Ordering::SeqCst) {
-                                break;
+                                cloned_sender
+                                    .lock()
+                                    .await
+                                    .send(content)
+                                    .await
+                                    .ok();
                             }
                         }
                     }
+                    if cancel_flag.load(Ordering::SeqCst) {
+                        break;
+                    }
                 }
                 if cancel_flag.load(Ordering::SeqCst) {
-                    let cloned_sender = sender.clone();
+                    let cloned_sender = Arc::clone(&sender);
 
-                    tokio::spawn(async move {
-                        cloned_sender
-                            .clone()
-                            .send("\n[ABORTED]".to_string())
-                            .await
-                            .ok()
-                    });
+                    cloned_sender
+                        .lock()
+                        .await
+                        .send("\n[ABORTED]".to_string())
+                        .await
+                        .ok();
                 }
 
                 drop(sender);
@@ -182,15 +181,20 @@ impl NetworkClient {
                 .and_then(|c| c.as_array())
                 .and_then(|arr| arr.first())
                 .and_then(|first| first.as_object())
-                .and_then(|fisr_object| obtain_delta(fisr_object))
+                .and_then(|fisr_object| fisr_object.get("message"))
+                .and_then(|message| message.as_object())
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
             {
-                let cloned_sender = sender.clone();
-                tokio::spawn(async move {
-                    cloned_sender
-                        .send(content)
-                        .await
-                        .ok()
-                });
+                let cloned_sender = Arc::clone(&sender);
+                let string = content.to_string();
+
+                cloned_sender
+                    .lock()
+                    .await
+                    .send(string)
+                    .await
+                    .ok();
             }
             Ok(serde_json::from_value::<T>(json_body)?)
         } else {
@@ -403,6 +407,37 @@ mod tests {
         assert_eq!(payload_json, expected_payload);
     }
 
+    #[test]
+    async fn test_prepare_request() {
+        let client = NetworkClient::new(None);
+        let mut settings = AssistantSettings::default();
+        let url = "https://models.inference.ai.azure.com/some/path".to_string();
+        settings.url = url.clone();
+
+        let cache_entries = vec![];
+        let sublime_inputs = vec![SublimeInputContent {
+            content: Some("content".to_string()),
+            path: None,
+            scope: None,
+            input_kind: InputKind::ViewSelection,
+            tool_id: None,
+        }];
+
+        let payload = client
+            .prepare_payload(
+                settings.clone(),
+                cache_entries,
+                sublime_inputs,
+            )
+            .unwrap();
+
+        let request = client
+            .prepare_request(settings.clone(), payload)
+            .unwrap();
+
+        assert_eq!(request.url().as_str(), url);
+    }
+
     #[tokio::test]
     async fn test_execute_response() {
         let mock_server = MockServer::start().await;
@@ -448,7 +483,7 @@ mod tests {
         let response: Result<TestResponse, _> = client
             .execute_request(
                 request,
-                tx,
+                Arc::new(Mutex::new(tx)),
                 Arc::new(AtomicBool::new(false)),
                 settings.stream,
             )
@@ -526,7 +561,7 @@ mod tests {
         let result = client
             .execute_request::<Map<String, Value>>(
                 request,
-                tx,
+                Arc::new(Mutex::new(tx)),
                 Arc::new(AtomicBool::new(false)),
                 settings.stream,
             )
@@ -607,7 +642,7 @@ mod tests {
         let result = client
             .execute_request::<Map<String, Value>>(
                 request,
-                tx,
+                Arc::new(Mutex::new(tx)),
                 Arc::new(AtomicBool::new(false)),
                 settings.stream,
             )
@@ -711,7 +746,7 @@ mod tests {
         let result: Map<String, Value> = client
             .execute_request::<Map<String, Value>>(
                 request,
-                tx,
+                Arc::new(Mutex::new(tx)),
                 Arc::new(AtomicBool::new(false)),
                 settings.stream,
             )
@@ -783,7 +818,7 @@ mod tests {
 
         let settings = AssistantSettings {
             name: "Test Assistant".to_string(),
-            output_mode: crate::types::OutputMode::Phantom,
+            output_mode: crate::types::PromptMode::Phantom,
             chat_model: "gpt-4o-mini".to_string(),
             url: mock_server.uri(),
             token: None,
@@ -818,7 +853,7 @@ mod tests {
             let response = client
                 .execute_request::<Map<String, Value>>(
                     request,
-                    tx,
+                    Arc::new(Mutex::new(tx)),
                     cancel_flag_clone,
                     settings.stream,
                 )

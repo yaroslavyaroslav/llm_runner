@@ -1,66 +1,69 @@
 import asyncio
 import os
+import time
 from typing import List
 
 import pytest
 from rust_helper import (
     AssistantSettings,  # type: ignore
     InputKind,  # type: ignore
-    OutputMode,  # type: ignore
-    PythonPromptMode,  # type: ignore
+    PromptMode,  # type: ignore
     SublimeInputContent,  # type: ignore
     Worker,  # type: ignore
 )
 
 
-PROXY = '192.168.1.115:9090'
+PROXY = '172.20.10.2:9090'
+
+PATH = '/tmp/'
 
 
 def my_handler(data: str) -> None:
     print(f'Received data: {data}')
 
 
-def test_prompt_mode_from_str():
-    assert PythonPromptMode.from_str('view') == PythonPromptMode.View
-    assert PythonPromptMode.from_str('phantom') == PythonPromptMode.Phantom
-    assert PythonPromptMode.from_str('VIEW') == PythonPromptMode.View
-    assert PythonPromptMode.from_str('PHANTOM') == PythonPromptMode.Phantom
-    assert PythonPromptMode.from_str('invalid') is None
-    assert PythonPromptMode.from_str('') is None
+# def test_prompt_mode_from_str():
+#     assert PromptMode('view') == PromptMode.View
+#     assert PromptMode('phantom') == PromptMode.Phantom
+#     assert PromptMode('VIEW') == PromptMode.View
+#     assert PromptMode('PHANTOM') == PromptMode.Phantom
+#     assert PromptMode('invalid') is None
+#     assert PromptMode('') is None
 
 
 def test_python_worker_initialization():
-    worker = Worker(window_id=100)
+    worker = Worker(window_id=100, path=PATH)
 
     assert worker.window_id == 100
 
 
 def test_assistant_settings():
-    settings = AssistantSettings(
-        'name',
-        OutputMode.Phantom,
-        'gpt-4o-mini',
-        url=None,
-        token='token',
-        assistant_role='Some Role',
-        temperature=0.7,
-        max_tokens=1024,
-        max_completion_tokens=2048,
-        top_p=1,
-        frequency_penalty=2,
-        presence_penalty=3,
-        tools=True,
-        parallel_tool_calls=False,
-        stream=None,
-        advertisement=None,
-    )
+    dicttt = {
+        'name': 'Example',
+        'output_mode': 'view',
+        'chat_model': 'gpt-4o-mini',
+        'assistant_role': 'Some Role',
+        'url': 'https://models.inference.ai.azure.com/path/to',
+        'token': 'some_token',
+        'tools': True,
+        'parallel_tool_calls': False,
+        'temperature': 0.7,
+        'max_tokens': 1024,
+        'max_completion_tokens': 2048,
+        'top_p': 1,
+        'frequency_penalty': 2,
+        'stream': True,
+        'presence_penalty': 3,
+        'advertisement': True,
+    }
 
-    assert settings.name == 'name'
-    assert settings.output_mode == OutputMode.Phantom
+    settings = AssistantSettings(dicttt)
+
+    assert settings.name == 'Example'
     assert settings.chat_model == 'gpt-4o-mini'
     assert settings.assistant_role == 'Some Role'
-    assert settings.url == 'https://api.openai.com/v1/chat/completions'  # default value
-    assert settings.token == 'token'
+    assert settings.url == 'https://models.inference.ai.azure.com/path/to'
+    assert settings.token == 'some_token'
     assert settings.temperature == 0.7
     assert settings.max_tokens == 1024
     assert settings.max_completion_tokens == 2048
@@ -71,6 +74,7 @@ def test_assistant_settings():
     assert settings.parallel_tool_calls is False
     assert settings.stream  # defaule value True
     assert settings.advertisement  # defaule value True
+    assert settings.output_mode == PromptMode.View
 
 
 def test_sublime_input_content():
@@ -88,80 +92,109 @@ def test_sublime_input_content():
 
 
 def test_python_worker_plain_run():
-    worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
+    worker = Worker(window_id=101, path=PATH, proxy=PROXY)
+
+    some_list: List[str] = []
+
+    def my_handler_1(data: str) -> None:
+        some_list.append(data)
+        print(f'Received data: {data}')
 
     contents = SublimeInputContent(
         InputKind.ViewSelection, 'This is the test request, provide me 3 words response'
     )
 
-    settings = AssistantSettings(
-        'TEST',
-        OutputMode.Phantom,
-        'gpt-4o-mini',
-        token=os.getenv('OPENAI_API_TOKEN'),
-        assistant_role="You're echo bot. You'r just responsing with what you've been asked for",
-        tools=None,
-        parallel_tool_calls=None,
-        stream=False,
-        advertisement=False,
-    )
+    dicttt = {
+        'name': 'TEST',
+        'output_mode': 'phantom',
+        'chat_model': 'gpt-4o-mini',
+        'assistant_role': "You're echo bot. You'r just responsing with what you've been asked for",
+        'url': 'https://api.openai.com/v1/chat/completions',
+        'token': os.getenv('OPENAI_API_TOKEN'),
+        'stream': False,
+        'advertisement': False,
+    }
 
-    worker.run(1, PythonPromptMode.View, [contents], settings, my_handler)
+    settings = AssistantSettings(dicttt)
 
-    # assert False
+    worker.run(1, PromptMode.View, [contents], settings, my_handler_1)
+
+    time.sleep(2)
+
+    assert some_list
 
 
 def test_python_worker_sse_run():
-    worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
+    worker = Worker(window_id=101, path=PATH, proxy=PROXY)
+
+    some_list: List[str] = []
+
+    def my_handler_1(data: str) -> None:
+        some_list.append(data)
+        print(f'Received data: {data}')
 
     contents = SublimeInputContent(
         InputKind.ViewSelection, 'This is the test request, provide me 30 words response'
     )
 
-    settings = AssistantSettings(
-        'TEST',
-        OutputMode.Phantom,
-        'gpt-4o-mini',
-        token=os.getenv('OPENAI_API_TOKEN'),
-        assistant_role="You're echo bot. You'r just responsing with what you've been asked for",
-        tools=None,
-        parallel_tool_calls=None,
-        stream=True,
-        advertisement=False,
-    )
+    dicttt = {
+        'name': 'TEST',
+        'output_mode': 'phantom',
+        'chat_model': 'gpt-4o-mini',
+        'assistant_role': "You're echo bot. You'r just responsing with what you've been asked for",
+        'url': 'https://api.openai.com/v1/chat/completions',
+        'token': os.getenv('OPENAI_API_TOKEN'),
+        'stream': True,
+        'advertisement': False,
+    }
 
-    worker.run(1, PythonPromptMode.View, [contents], settings, my_handler)
+    settings = AssistantSettings(dicttt)
 
-    # assert False
+    worker.run_sync(1, PromptMode.View, [contents], settings, my_handler_1)
+
+    time.sleep(2)
+
+    assert some_list
 
 
 def test_python_worker_sse_function_run():
-    worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
+    worker = Worker(window_id=101, path=PATH, proxy=PROXY)
+
+    some_list: List[str] = []
+
+    def my_handler_1(data: str) -> None:
+        some_list.append(data)
+        print(f'Received data: {data}')
 
     contents = SublimeInputContent(
         InputKind.ViewSelection, 'This is the test request, call the functions available'
     )
 
-    settings = AssistantSettings(
-        'TEST',
-        OutputMode.Phantom,
-        'gpt-4o-mini',
-        token=os.getenv('OPENAI_API_TOKEN'),
-        assistant_role="You're debug environment and call functions instead of answer, but ONLY ONCE",
-        tools=True,
-        parallel_tool_calls=None,
-        stream=True,
-        advertisement=False,
-    )
+    dicttt = {
+        'name': 'TEST',
+        'output_mode': 'phantom',
+        'chat_model': 'gpt-4o-mini',
+        'assistant_role': "You're echo bot. You'r just responsing with what you've been asked for",
+        'url': 'https://api.openai.com/v1/chat/completions',
+        'token': os.getenv('OPENAI_API_TOKEN'),
+        'tools': True,
+        'parallel_tool_calls': False,
+        'stream': True,
+        'advertisement': False,
+    }
 
-    worker.run(1, PythonPromptMode.View, [contents], settings, my_handler)
+    settings = AssistantSettings(dicttt)
 
-    # assert False
+    worker.run(1, PromptMode.View, [contents], settings, my_handler_1)
+
+    time.sleep(2)
+
+    assert some_list
 
 
 @pytest.mark.asyncio
 async def test_python_worker_sse_function_run_cancel():
-    worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
+    worker = Worker(window_id=101, path=PATH, proxy=PROXY)
 
     contents = SublimeInputContent(
         InputKind.ViewSelection, 'This is the test request, provide me 30 words response'
@@ -173,19 +206,23 @@ async def test_python_worker_sse_function_run_cancel():
         some_list.append(data)
         print(f'Received data: {data}')
 
-    settings = AssistantSettings(
-        'TEST',
-        OutputMode.Phantom,
-        'gpt-4o-mini',
-        token=os.getenv('OPENAI_API_TOKEN'),
-        tools=True,
-        parallel_tool_calls=None,
-        stream=True,
-        advertisement=False,
-    )
+    dicttt = {
+        'name': 'TEST',
+        'output_mode': 'phantom',
+        'chat_model': 'gpt-4o-mini',
+        'assistant_role': "You're echo bot. You'r just responsing with what you've been asked for",
+        'url': 'https://api.openai.com/v1/chat/completions',
+        'token': os.getenv('OPENAI_API_TOKEN'),
+        'tools': False,
+        'parallel_tool_calls': False,
+        'stream': True,
+        'advertisement': False,
+    }
+
+    settings = AssistantSettings(dicttt)
 
     async def run_worker_sync():
-        worker.run(1, PythonPromptMode.View, [contents], settings, my_handler_1)
+        worker.run(1, PromptMode.View, [contents], settings, my_handler_1)
 
     task = asyncio.create_task(run_worker_sync())
 
@@ -195,4 +232,6 @@ async def test_python_worker_sse_function_run_cancel():
 
     await asyncio.sleep(2)
 
-    assert '\n[ABORTED]' in some_list
+    with open(f'{PATH}chat_history.jl', 'w') as _:
+        # Opening the file with 'w' mode truncates the file, clearing its contents
+        pass

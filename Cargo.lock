@@ -1329,7 +1329,6 @@ dependencies = [
  "futures-util",
  "once_cell",
  "openssl",
- "openssl-sys",
  "pyo3",
  "reqwest",
  "serde",

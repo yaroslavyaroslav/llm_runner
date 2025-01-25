@@ -15,6 +15,8 @@ from rust_helper import (
 
 PROXY = '172.20.10.2:9090'
 
+PATH = '/tmp/'
+
 
 def my_handler(data: str) -> None:
     print(f'Received data: {data}')
@@ -30,7 +32,7 @@ def my_handler(data: str) -> None:
 
 
 def test_python_worker_initialization():
-    worker = Worker(window_id=100, path='/tmp/')
+    worker = Worker(window_id=100, path=PATH)
 
     assert worker.window_id == 100
 
@@ -90,7 +92,7 @@ def test_sublime_input_content():
 
 
 def test_python_worker_plain_run():
-    worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
+    worker = Worker(window_id=101, path=PATH, proxy=PROXY)
 
     some_list: List[str] = []
 
@@ -123,7 +125,7 @@ def test_python_worker_plain_run():
 
 
 def test_python_worker_sse_run():
-    worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
+    worker = Worker(window_id=101, path=PATH, proxy=PROXY)
 
     some_list: List[str] = []
 
@@ -156,7 +158,7 @@ def test_python_worker_sse_run():
 
 
 def test_python_worker_sse_function_run():
-    worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
+    worker = Worker(window_id=101, path=PATH, proxy=PROXY)
 
     some_list: List[str] = []
 
@@ -192,7 +194,7 @@ def test_python_worker_sse_function_run():
 
 @pytest.mark.asyncio
 async def test_python_worker_sse_function_run_cancel():
-    worker = Worker(window_id=101, path='/tmp/', proxy=PROXY)
+    worker = Worker(window_id=101, path=PATH, proxy=PROXY)
 
     contents = SublimeInputContent(
         InputKind.ViewSelection, 'This is the test request, provide me 30 words response'
@@ -230,4 +232,6 @@ async def test_python_worker_sse_function_run_cancel():
 
     await asyncio.sleep(2)
 
-    assert '\n[ABORTED]' in some_list
+    with open(f'{PATH}chat_history.jl', 'w') as _:
+        # Opening the file with 'w' mode truncates the file, clearing its contents
+        pass

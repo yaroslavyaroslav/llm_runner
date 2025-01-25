@@ -1,5 +1,5 @@
 use std::{
-    sync::{Arc, Mutex},
+    sync::{atomic::Ordering, Arc},
     thread,
 };
 
@@ -21,7 +21,7 @@ pub struct PythonWorker {
     #[pyo3(get)]
     pub proxy: Option<String>,
 
-    worker: Arc<Mutex<OpenAIWorker>>,
+    worker: Arc<OpenAIWorker>,
 }
 
 struct Function {
@@ -48,9 +48,9 @@ impl PythonWorker {
         PythonWorker {
             window_id,
             proxy: proxy.clone(),
-            worker: Arc::new(Mutex::new(OpenAIWorker::new(
+            worker: Arc::new(OpenAIWorker::new(
                 window_id, path, proxy,
-            ))),
+            )),
         }
     }
 
@@ -68,8 +68,6 @@ impl PythonWorker {
         thread::spawn(move || {
             let result = rt.block_on(async move {
                 worker_clone
-                    .lock()
-                    .unwrap()
                     .run(
                         view_id,
                         contents,
@@ -87,10 +85,35 @@ impl PythonWorker {
     }
 
     pub fn cancel(&mut self) {
-        self.worker
-            .lock()
-            .unwrap()
-            .cancel();
+        // use std::io::Write;
+        // let mut file = std::fs::OpenOptions::new()
+        //     .append(true)
+        //     .create(true)
+        //     .open("/tmp/plugin_log.log")
+        //     .unwrap();
+
+        // writeln!(file, "{}", "log cancel event");
+        let worker = Arc::clone(&self.worker);
+        let rt = Runtime::new().expect("Failed to create runtime");
+        rt.block_on(async { worker.cancel().await })
+    }
+
+    pub fn is_alive(&self) -> bool {
+        // use std::io::Write;
+        // let mut file = std::fs::OpenOptions::new()
+        //     .append(true)
+        //     .create(true)
+        //     .open("/tmp/plugin_log.log")
+        //     .unwrap();
+
+        // writeln!(file, "{}", "log is_alive event");
+        let worker = Arc::clone(&self.worker);
+        let rt = Runtime::new().expect("Failed to create runtime");
+        rt.block_on(async {
+            worker
+                .is_alive
+                .load(Ordering::Relaxed)
+        })
     }
 
     fn run_sync(
@@ -105,8 +128,6 @@ impl PythonWorker {
         let worker_clone = self.worker.clone();
         let _ = rt.block_on(async move {
             worker_clone
-                .lock()
-                .unwrap()
                 .run(
                     view_id,
                     contents,

@@ -31,6 +31,7 @@ pub struct OpenAIWorker {
 
     cacher: Arc<Mutex<Cacher>>,
     cancel_signal: Arc<AtomicBool>,
+    pub(crate) is_alive: Arc<AtomicBool>,
 }
 
 impl OpenAIWorker {
@@ -45,20 +46,24 @@ impl OpenAIWorker {
             cacher_path: path.clone(),
             cacher: Arc::new(Mutex::new(Cacher::new(&path))),
             cancel_signal: Arc::new(AtomicBool::new(false)),
+            is_alive: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub async fn run(
-        &mut self,
+        &self,
         view_id: usize,
         contents: Vec<SublimeInputContent>,
         prompt_mode: PromptMode,
         assistant_settings: AssistantSettings,
         handler: Arc<dyn Fn(String) + Send + Sync + 'static>,
     ) -> Result<()> {
-        self.view_id = Some(view_id);
-        self.prompt_mode = Some(prompt_mode.clone());
-        self.assistant_settings = Some(assistant_settings.clone());
+        self.is_alive
+            .store(true, Ordering::SeqCst);
+
+        // self.view_id = Some(view_id);
+        // self.prompt_mode = Some(prompt_mode.clone());
+        // self.assistant_settings = Some(assistant_settings.clone());
         let provider = NetworkClient::new(self.proxy.clone());
 
         let (tx, rx) = mpsc::channel(view_id);
@@ -80,12 +85,15 @@ impl OpenAIWorker {
 
         let handler_fut = StreamHandler::handle_stream_with(rx, handler);
 
-        let _result = join!(result_fut, handler_fut);
+        let (handler, _) = join!(result_fut, handler_fut);
 
-        Ok(())
+        self.is_alive
+            .store(false, Ordering::SeqCst);
+
+        handler
     }
 
-    pub fn cancel(&self) {
+    pub async fn cancel(&self) {
         self.cancel_signal
             .store(true, Ordering::SeqCst);
     }

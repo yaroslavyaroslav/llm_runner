@@ -84,10 +84,7 @@ impl PythonWorker {
         Ok(())
     }
 
-    pub fn cancel(&mut self) {
-        // let worker = Arc::clone(&self.worker);
-        self.worker.cancel()
-    }
+    pub fn cancel(&mut self) { self.worker.cancel() }
 
     pub fn is_alive(&self) -> bool {
         self.worker

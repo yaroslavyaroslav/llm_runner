@@ -387,3 +387,53 @@ async fn test_remote_server_fucntion_call() {
         result
     );
 }
+
+#[test]
+#[ignore = "It's paid, so should be skipped by default"]
+async fn test_remote_server_third_party_completion() {
+    let tmp_dir = TempDir::new()
+        .unwrap()
+        .into_path()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let worker = OpenAIWorker::new(
+        1,
+        tmp_dir.clone(),
+        Some(PROXY.to_string()),
+    );
+
+    let mut assistant_settings = AssistantSettings::default();
+    assistant_settings.url = format!("https://api.together.xyz/v1/chat/completions");
+    assistant_settings.token =
+        Some("af0dadefb31eeac911ebca500b7f0871d2641386e1df2ce5183e8681e667e736".to_string());
+    assistant_settings.chat_model = "meta-llama/Llama-3.3-70B-Instruct-Turbo".to_string();
+    assistant_settings.stream = true;
+
+    let prompt_mode = PromptMode::View;
+
+    let contents = SublimeInputContent {
+        content: Some("Wtire me a poem about computer".to_string()),
+        path: Some("/path/to/file".to_string()),
+        scope: Some("text.plain".to_string()),
+        input_kind: InputKind::ViewSelection,
+        tool_id: None,
+    };
+
+    let result = worker
+        .run(
+            1,
+            vec![contents],
+            prompt_mode,
+            assistant_settings,
+            Arc::new(|_| {}),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "Expected Ok, got Err: {:?}",
+        result
+    );
+}

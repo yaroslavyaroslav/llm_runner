@@ -110,47 +110,59 @@ impl NetworkClient {
             if response.status().is_success() {
                 let mut stream = response.bytes_stream();
 
+                let mut buffer = String::new();
                 while let Some(chunk) = stream.next().await {
                     let chunk = chunk?;
 
-                    let data = String::from_utf8_lossy(&chunk);
+                    // Append this chunk to the buffer
+                    buffer.push_str(&String::from_utf8_lossy(&chunk));
 
-                    for line in data.lines() {
-                        if line.trim() == "data: [DONE]" {
+                    while let Some(pos) = buffer.find("data: ") {
+                        if let Some(end) = buffer[pos ..].find('\n') {
+                            let data_line = &buffer[pos + 6 .. pos + end].trim(); // "+ 6" skips "data: "
+                            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(data_line) {
+                                merge_json(&mut composable_response, &json_value);
+
+                                if let Some(content) = json_value
+                                    .get("choices")
+                                    .and_then(|c| c.as_array())
+                                    .and_then(|arr| arr.first())
+                                    .and_then(|first| first.as_object())
+                                    .and_then(|first_object| obtain_delta(first_object))
+                                {
+                                    let cloned_sender = Arc::clone(&sender);
+
+                                    cloned_sender
+                                        .lock()
+                                        .await
+                                        .send(content)
+                                        .await
+                                        .ok();
+                                }
+
+                                // Remove the processed data from the buffer
+                                buffer.drain(0 .. (pos + end));
+                            } else {
+                                // If JSON isn't complete, wait for more data
+                                break;
+                            }
+                        } else {
+                            // If there's no complete line, wait for more data
                             break;
                         }
-
-                        if let Some(stripped) = line
-                            .trim_start()
-                            .strip_prefix("data: ")
-                        {
-                            let json_value: serde_json::Value = serde_json::from_str(stripped)?;
-
-                            merge_json(&mut composable_response, &json_value);
-
-                            // TODO: To add "[ABORTED]" to history as well on break
-                            if let Some(content) = json_value
-                                .get("choices")
-                                .and_then(|c| c.as_array())
-                                .and_then(|arr| arr.first())
-                                .and_then(|first| first.as_object())
-                                .and_then(|fisr_object| obtain_delta(fisr_object))
-                            {
-                                let cloned_sender = Arc::clone(&sender);
-
-                                cloned_sender
-                                    .lock()
-                                    .await
-                                    .send(content)
-                                    .await
-                                    .ok();
-                            }
+                        if cancel_flag.load(Ordering::SeqCst) {
+                            break;
                         }
                     }
+                    if buffer.contains("[DONE]") {
+                        break;
+                    }
+
                     if cancel_flag.load(Ordering::SeqCst) {
                         break;
                     }
                 }
+
                 if cancel_flag.load(Ordering::SeqCst) {
                     let cloned_sender = Arc::clone(&sender);
 

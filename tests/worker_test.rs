@@ -122,6 +122,7 @@ async fn test_run_tool_method_with_mock_server() {
     assistant_settings.token = Some("dummy-token".to_string());
     assistant_settings.chat_model = "some_model".to_string();
     assistant_settings.stream = false;
+    assistant_settings.api_type = ApiType::OpenAi;
 
     let prompt_mode = PromptMode::View;
 

@@ -224,6 +224,18 @@ pub struct AssistantSettings {
 
     #[pyo3(get)]
     pub advertisement: bool,
+
+    #[pyo3(get)]
+    pub api_type: ApiType,
+}
+
+#[pyclass(eq, eq_int)]
+#[derive(EnumString, Display, Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiType {
+    OpenAi,
+    PlainText,
+    Antropic,
 }
 
 #[derive(FromPyObject, Clone)]
@@ -304,6 +316,10 @@ impl AssistantSettings {
             default.advertisement = value.clone();
         }
 
+        if let Some(RustyEnum::String(value)) = dict.get("api_type") {
+            default.api_type = ApiType::from_str(value).unwrap_or(ApiType::PlainText);
+        }
+
         default
     }
 }
@@ -327,6 +343,7 @@ impl Default for AssistantSettings {
             parallel_tool_calls: None,
             stream: true,
             advertisement: true,
+            api_type: ApiType::PlainText,
         }
     }
 }

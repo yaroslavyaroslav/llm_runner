@@ -13,7 +13,7 @@ pub mod worker;
 use openai_network_types::Roles;
 use py_worker::{drop_all, read_all_cache, read_model, write_model, write_to_cache, PythonWorker};
 use pyo3::prelude::*;
-use types::{AssistantSettings, InputKind, PromptMode, SublimeInputContent, SublimeOutputContent};
+use types::{ApiType, AssistantSettings, InputKind, PromptMode, SublimeInputContent, SublimeOutputContent};
 
 #[pymodule]
 fn rust_helper(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -24,6 +24,7 @@ fn rust_helper(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<InputKind>()?;
     m.add_class::<SublimeOutputContent>()?;
     m.add_class::<Roles>()?;
+    m.add_class::<ApiType>()?;
 
     m.add_function(wrap_pyfunction!(read_all_cache, m)?)?;
     m.add_function(wrap_pyfunction!(write_to_cache, m)?)?;

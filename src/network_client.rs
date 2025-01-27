@@ -1,6 +1,9 @@
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
 };
 
 use anyhow::Result;
@@ -15,7 +18,10 @@ use reqwest::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
-use tokio::sync::{mpsc::Sender, Mutex};
+use tokio::{
+    sync::{mpsc::Sender, Mutex},
+    time::timeout,
+};
 
 use crate::{
     logger,
@@ -118,42 +124,58 @@ impl NetworkClient {
                     .eventsource();
                 let mut buffer = String::new();
 
-                while let Some(Ok(event)) = stream.next().await {
-                    let composable = Arc::clone(&composable_response);
-                    let cloned_sender = Arc::clone(&sender);
+                loop {
+                    match timeout(Duration::from_secs(10), stream.next()).await {
+                        Ok(Some(Ok(event))) => {
+                            // ...
+                            let composable = Arc::clone(&composable_response);
+                            let cloned_sender = Arc::clone(&sender);
 
-                    info!("received json: {:?}", event.data);
-                    if let Ok(combined) = serde_json::from_str(&buffer) {
-                        Self::handle_json(composable, combined, cloned_sender).await;
-                        buffer.clear();
-                    } else {
-                        match serde_json::from_str::<Value>(&event.data) {
-                            Ok(json_value) => {
-                                Self::handle_json(
-                                    composable,
-                                    json_value.clone(),
-                                    cloned_sender,
-                                )
-                                .await;
-                                if json_value
-                                    .as_object()
-                                    .and_then(|obj| obj.get("usage"))
-                                    .and_then(|value| value.as_null())
-                                    .is_none()
-                                {
-                                    break; // fuckers from together never gives a fuck about to send [DONE] token for R1
+                            info!("received json: {:?}", event.data);
+                            if let Ok(combined) = serde_json::from_str(&buffer) {
+                                Self::handle_json(composable, combined, cloned_sender).await;
+                                buffer.clear();
+                            } else {
+                                match serde_json::from_str::<Value>(&event.data) {
+                                    Ok(json_value) => {
+                                        Self::handle_json(
+                                            composable,
+                                            json_value.clone(),
+                                            cloned_sender,
+                                        )
+                                        .await;
+                                        if json_value
+                                            .as_object()
+                                            .and_then(|obj| obj.get("usage"))
+                                            .and_then(|value| value.as_object())
+                                            .is_some()
+                                        {
+                                            break; // fuckers from together never gives a fuck about to send [DONE] token for R1
+                                        }
+                                    }
+                                    Err(e) => {
+                                        if e.is_eof() {
+                                            buffer.push_str(&event.data);
+                                        }
+                                    }
                                 }
                             }
-                            Err(e) => {
-                                if e.is_eof() {
-                                    buffer.push_str(&event.data);
-                                }
+
+                            if event.data.contains("[DONE]") || cancel_flag.load(Ordering::SeqCst) {
+                                break;
                             }
                         }
-                    }
-
-                    if event.data.contains("[DONE]") || cancel_flag.load(Ordering::SeqCst) {
-                        break;
+                        Ok(Some(Err(_))) => {
+                            break;
+                        }
+                        Ok(None) => {
+                            // Stream is exhausted
+                            break;
+                        }
+                        Err(_) => {
+                            // Timeout exceeded
+                            break; // fuckers from together can stall stream for more than 10 secs for R1
+                        }
                     }
                 }
 

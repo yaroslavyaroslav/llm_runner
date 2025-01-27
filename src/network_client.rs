@@ -104,7 +104,7 @@ impl NetworkClient {
             .execute(request)
             .await?;
 
-        let mut composable_response = serde_json::json!({});
+        let composable_response = Arc::new(Mutex::new(serde_json::json!({})));
 
         if stream {
             if response.status().is_success() {
@@ -114,33 +114,19 @@ impl NetworkClient {
                 while let Some(chunk) = stream.next().await {
                     let chunk = chunk?;
 
-                    // Append this chunk to the buffer
                     buffer.push_str(&String::from_utf8_lossy(&chunk));
 
                     while let Some(pos) = buffer.find("data: ") {
                         if let Some(end) = buffer[pos ..].find('\n') {
                             let data_line = &buffer[pos + 6 .. pos + end].trim(); // "+ 6" skips "data: "
-                            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(data_line) {
-                                merge_json(&mut composable_response, &json_value);
+                            if let Ok(sss) = serde_json::from_str::<serde_json::Value>(data_line) {
+                                self.handle_json(
+                                    Arc::clone(&composable_response),
+                                    dbg!(sss),
+                                    sender.clone(),
+                                )
+                                .await;
 
-                                if let Some(content) = json_value
-                                    .get("choices")
-                                    .and_then(|c| c.as_array())
-                                    .and_then(|arr| arr.first())
-                                    .and_then(|first| first.as_object())
-                                    .and_then(|first_object| obtain_delta(first_object))
-                                {
-                                    let cloned_sender = Arc::clone(&sender);
-
-                                    cloned_sender
-                                        .lock()
-                                        .await
-                                        .send(content)
-                                        .await
-                                        .ok();
-                                }
-
-                                // Remove the processed data from the buffer
                                 buffer.drain(0 .. (pos + end));
                             } else {
                                 // If JSON isn't complete, wait for more data
@@ -176,9 +162,12 @@ impl NetworkClient {
 
                 drop(sender);
 
-                Ok(serde_json::from_value::<T>(
-                    composable_response,
-                )?)
+                let result = composable_response
+                    .lock()
+                    .await
+                    .take();
+
+                Ok(serde_json::from_value::<T>(result)?)
             } else {
                 Err(anyhow::anyhow!(format!(
                     "Request failed with status: {}",
@@ -221,134 +210,160 @@ impl NetworkClient {
             .into())
         }
     }
-}
 
-/// This function is actually handles the SSE stream from the llm
-/// There are two cases handled here so far:
-///  - llm text answer: the `"content"` field is getting concantinated during
-///    this call
-///  - llm function call: the `"tool_calls"[0]."function"."arguments"` field is
-///    getting concantinated during this call
-///
-/// The main assumption here is that the response can never be mixed
-/// to contain both `"content"` and `"tool_calls"` in a single stream.
-fn merge_json(base: &mut Value, addition: &Value) {
-    match (base, addition) {
-        (Value::Object(base_map), Value::Object(addition_map)) => {
-            for (key, value) in addition_map {
-                match key.as_str() {
-                    "content" => {
-                        if value.is_null() {
-                            eprintln!("Skipping null 'content' field");
-                            continue;
-                        }
-                        if let Some(Value::String(existing_value)) = base_map.get_mut(key) {
-                            if let Value::String(addition_value) = value {
-                                existing_value.push_str(addition_value);
+    async fn handle_json(
+        &self,
+        composable_response: Arc<Mutex<serde_json::Value>>,
+        json_value: serde_json::Value,
+        sender: Arc<Mutex<Sender<String>>>,
+    ) {
+        let mut result = composable_response
+            .lock()
+            .await;
+        Self::merge_json(dbg!(&mut result), dbg!(&json_value));
+
+        if let Some(content) = json_value
+            .get("choices")
+            .and_then(|c| c.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|first| first.as_object())
+            .and_then(|first_object| Self::obtain_delta(first_object))
+        {
+            sender
+                .lock()
+                .await
+                .send(content)
+                .await
+                .ok();
+        }
+    }
+    /// This function is actually handles the SSE stream from the llm
+    /// There are two cases handled here so far:
+    ///  - llm text answer: the `"content"` field is getting concantinated during
+    ///    this call
+    ///  - llm function call: the `"tool_calls"[0]."function"."arguments"` field is
+    ///    getting concantinated during this call
+    ///
+    /// The main assumption here is that the response can never be mixed
+    /// to contain both `"content"` and `"tool_calls"` in a single stream.
+    fn merge_json(base: &mut Value, addition: &Value) {
+        match (base, addition) {
+            (Value::Object(base_map), Value::Object(addition_map)) => {
+                for (key, value) in addition_map {
+                    match key.as_str() {
+                        "content" => {
+                            if value.is_null() {
+                                eprintln!("Skipping null 'content' field");
+                                continue;
+                            }
+                            if let Some(Value::String(existing_value)) = base_map.get_mut(key) {
+                                if let Value::String(addition_value) = value {
+                                    existing_value.push_str(addition_value);
+                                }
                             }
                         }
-                    }
-                    "tool_calls" => {
-                        if let (Some(base_array), Some(addition_array)) = (
-                            base_map
-                                .get_mut(key)
-                                .and_then(|v| v.as_array_mut()),
-                            value.as_array(),
-                        ) {
-                            merge_tool_calls(base_array, addition_array.to_vec());
-                        } else {
-                            base_map.insert(key.to_string(), value.clone());
+                        "tool_calls" => {
+                            if let (Some(base_array), Some(addition_array)) = (
+                                base_map
+                                    .get_mut(key)
+                                    .and_then(|v| v.as_array_mut()),
+                                value.as_array(),
+                            ) {
+                                Self::merge_tool_calls(base_array, addition_array.to_vec());
+                            } else {
+                                base_map.insert(key.to_string(), value.clone());
+                            }
                         }
-                    }
-                    _ => {
-                        merge_json(
-                            base_map
-                                .entry(key)
-                                .or_insert(Value::Null),
-                            value,
-                        )
+                        _ => {
+                            Self::merge_json(
+                                base_map
+                                    .entry(key)
+                                    .or_insert(Value::Null),
+                                value,
+                            )
+                        }
                     }
                 }
             }
-        }
-        (Value::Array(base_array), Value::Array(addition_array)) => {
-            merge_json(&mut base_array[0], &addition_array[0]);
-        }
-        (base, addition) => {
-            *base = addition.clone();
+            (Value::Array(base_array), Value::Array(addition_array)) => {
+                Self::merge_json(&mut base_array[0], &addition_array[0]);
+            }
+            (base, addition) => {
+                *base = addition.clone();
+            }
         }
     }
-}
 
-fn merge_tool_calls(base_array: &mut [Value], addition_array: Vec<Value>) {
-    for (base_item, addition_item) in base_array
-        .iter_mut()
-        .zip(addition_array)
-    {
-        merge_tool_call(base_item, &addition_item);
+    fn merge_tool_calls(base_array: &mut [Value], addition_array: Vec<Value>) {
+        for (base_item, addition_item) in base_array
+            .iter_mut()
+            .zip(addition_array)
+        {
+            Self::merge_tool_call(base_item, &addition_item);
+        }
     }
-}
 
-fn merge_tool_call(base_item: &mut Value, addition_item: &Value) {
-    if let (Some(base_args), Some(addition_args)) = (
-        base_item
-            .get_mut("function")
-            .and_then(|f| f.get_mut("arguments")),
-        addition_item
-            .get("function")
-            .and_then(|f| f.get("arguments")),
-    ) {
-        if let Some(base_args_str) = base_args.as_str() {
-            if let Some(addition_args_str) = addition_args.as_str() {
-                *base_args = serde_json::json!(format!(
-                    "{}{}",
-                    base_args_str, addition_args_str
-                ));
+    fn merge_tool_call(base_item: &mut Value, addition_item: &Value) {
+        if let (Some(base_args), Some(addition_args)) = (
+            base_item
+                .get_mut("function")
+                .and_then(|f| f.get_mut("arguments")),
+            addition_item
+                .get("function")
+                .and_then(|f| f.get("arguments")),
+        ) {
+            if let Some(base_args_str) = base_args.as_str() {
+                if let Some(addition_args_str) = addition_args.as_str() {
+                    *base_args = serde_json::json!(format!(
+                        "{}{}",
+                        base_args_str, addition_args_str
+                    ));
+                } else {
+                    *base_args = addition_args.clone();
+                }
             } else {
                 *base_args = addition_args.clone();
             }
-        } else {
-            *base_args = addition_args.clone();
-        }
-    }
-}
-
-/// This function extracts a plain string for streaming it into UI
-/// This is either `"content"` field (the actual answer of the llm) or
-/// a function call, where it is the `"arguments"` the one that actually
-/// streams.
-///
-/// Thus there's low sense of showing the exact arguments of the call to a user
-/// only `"tool_calls"[0]."function"."name"` streams in the latter case here
-/// (it's a one shot).
-fn obtain_delta(map: &Map<String, Value>) -> Option<String> {
-    if let Some(delta) = map.get("delta") {
-        if let Some(content) = delta
-            .get("content")
-            .and_then(|c| c.as_str())
-        {
-            return Some(content.to_string());
-        }
-        if let Some(function_name) = delta
-            .get("tool_calls")
-            .and_then(|v| v.as_array())
-            .and_then(|array| array.first())
-            .and_then(|first_item| first_item.get("function"))
-            .and_then(|function| function.get("name"))
-        {
-            return function_name
-                .as_str()
-                .map(|s| s.to_string());
         }
     }
 
-    for value in map.values() {
-        return value
-            .as_object()
-            .and_then(|map| obtain_delta(map));
-    }
+    /// This function extracts a plain string for streaming it into UI
+    /// This is either `"content"` field (the actual answer of the llm) or
+    /// a function call, where it is the `"arguments"` the one that actually
+    /// streams.
+    ///
+    /// Thus there's low sense of showing the exact arguments of the call to a user
+    /// only `"tool_calls"[0]."function"."name"` streams in the latter case here
+    /// (it's a one shot).
+    fn obtain_delta(map: &Map<String, Value>) -> Option<String> {
+        if let Some(delta) = map.get("delta") {
+            if let Some(content) = delta
+                .get("content")
+                .and_then(|c| c.as_str())
+            {
+                return Some(content.to_string());
+            }
+            if let Some(function_name) = delta
+                .get("tool_calls")
+                .and_then(|v| v.as_array())
+                .and_then(|array| array.first())
+                .and_then(|first_item| first_item.get("function"))
+                .and_then(|function| function.get("name"))
+            {
+                return function_name
+                    .as_str()
+                    .map(|s| s.to_string());
+            }
+        }
 
-    None
+        for value in map.values() {
+            return value
+                .as_object()
+                .and_then(|map| Self::obtain_delta(map));
+        }
+
+        None
+    }
 }
 
 #[cfg(test)]

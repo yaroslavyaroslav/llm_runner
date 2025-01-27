@@ -19,6 +19,7 @@ strum_macros = "0.26"
 anyhow = "1.0"
 fern = "0.7"
 log = "0.4"
+eventsource-stream = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 openssl = { version = "0.10", features = ["vendored"] }

@@ -4,6 +4,7 @@ use std::sync::{
 };
 
 use anyhow::Result;
+use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
 use log::info;
 use reqwest::{
@@ -120,11 +121,12 @@ impl NetworkClient {
             if response.status().is_success() {
                 let (tx, mut rx) = mpsc::channel::<String>(100);
                 let mut text_buffer = String::new();
-                let mut stream = response.bytes_stream();
+                let mut stream = response
+                    .bytes_stream()
+                    .eventsource();
                 let composable = Arc::clone(&composable_response);
                 let cloned_sender = Arc::clone(&sender);
 
-                let mut buffer = String::new();
                 let task = task::spawn(async move {
                     while let Some(json) = rx.recv().await {
                         let composable = Arc::clone(&composable);
@@ -150,29 +152,11 @@ impl NetworkClient {
                     drop(rx);
                 });
 
-                while let Some(chunk) = stream.next().await {
-                    let chunk = chunk?;
-                    buffer.push_str(&String::from_utf8_lossy(&chunk));
+                while let Some(Ok(event)) = stream.next().await {
+                    tx.send(event.clone().data.clone())
+                        .await?;
 
-                    let mut lines = buffer.split('\n');
-                    while let Some(line) = lines.next() {
-                        let trimmed = line
-                            .trim_start()
-                            .strip_prefix("data: ");
-
-                        if let Some(stripped) = trimmed {
-                            // dbg!("some1");
-                            tx.send(stripped.to_string())
-                                .await?;
-                        }
-                    }
-
-                    buffer = lines
-                        .next()
-                        .unwrap_or("")
-                        .to_string();
-
-                    if buffer.contains("[DONE]") || cancel_flag.load(Ordering::SeqCst) {
+                    if event.data.contains("[DONE]") || cancel_flag.load(Ordering::SeqCst) {
                         break;
                     }
                 }

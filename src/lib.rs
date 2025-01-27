@@ -3,6 +3,7 @@ mod network_client;
 mod openai_network_types;
 pub mod types;
 
+mod logger;
 mod py_worker;
 mod runner;
 pub mod stream_handler;

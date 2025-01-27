@@ -174,6 +174,14 @@ impl NetworkClient {
                         }
                         Err(_) => {
                             // Timeout exceeded
+                            let cloned_sender = Arc::clone(&sender);
+
+                            cloned_sender
+                                .lock()
+                                .await
+                                .send("\n[STALLED]".to_string())
+                                .await
+                                .ok();
                             break; // fuckers from together can stall stream for more than 10 secs for R1
                         }
                     }

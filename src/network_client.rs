@@ -13,7 +13,13 @@ use reqwest::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
-use tokio::sync::{mpsc::Sender, Mutex};
+use tokio::{
+    sync::{
+        mpsc::{self, Sender},
+        Mutex,
+    },
+    task,
+};
 
 use crate::{
     openai_network_types::OpenAICompletionRequest,
@@ -108,43 +114,58 @@ impl NetworkClient {
 
         if stream {
             if response.status().is_success() {
+                let (tx, mut rx) = mpsc::channel::<String>(100);
+                let mut text_buffer = String::new();
                 let mut stream = response.bytes_stream();
+                let composable = Arc::clone(&composable_response);
+                let cloned_sender = Arc::clone(&sender);
 
                 let mut buffer = String::new();
+                let task = task::spawn(async move {
+                    while let Some(line) = rx.recv().await {
+                        let composable = Arc::clone(&composable);
+                        let cloned_sender = Arc::clone(&cloned_sender);
+                        if text_buffer.is_empty() {
+                            text_buffer = line.clone();
+                        } else {
+                            text_buffer.push_str(&line);
+                        }
+
+                        match serde_json::from_str(&text_buffer) {
+                            Ok(json_value) => {
+                                Self::handle_json(composable, json_value, cloned_sender).await;
+                                text_buffer.clear();
+                            }
+                            Err(_) => {
+                                // Continue to the next iteration
+                            }
+                        }
+                    }
+                });
+
                 while let Some(chunk) = stream.next().await {
                     let chunk = chunk?;
-
                     buffer.push_str(&String::from_utf8_lossy(&chunk));
 
-                    while let Some(pos) = buffer.find("data: ") {
-                        if let Some(end) = buffer[pos ..].find('\n') {
-                            let data_line = &buffer[pos + 6 .. pos + end].trim(); // "+ 6" skips "data: "
-                            if let Ok(sss) = serde_json::from_str::<serde_json::Value>(data_line) {
-                                self.handle_json(
-                                    Arc::clone(&composable_response),
-                                    dbg!(sss),
-                                    sender.clone(),
-                                )
-                                .await;
+                    let mut lines = buffer.split('\n');
+                    while let Some(line) = lines.next() {
+                        let trimmed = line
+                            .trim_start()
+                            .strip_prefix("data: ");
 
-                                buffer.drain(0 .. (pos + end));
-                            } else {
-                                // If JSON isn't complete, wait for more data
-                                break;
-                            }
-                        } else {
-                            // If there's no complete line, wait for more data
-                            break;
-                        }
-                        if cancel_flag.load(Ordering::SeqCst) {
-                            break;
+                        if let Some(stripped) = trimmed {
+                            // dbg!("some1");
+                            tx.send(stripped.to_string())
+                                .await?;
                         }
                     }
+
+                    buffer = lines
+                        .next()
+                        .unwrap_or("")
+                        .to_string();
+
                     if buffer.contains("[DONE]") {
-                        break;
-                    }
-
-                    if cancel_flag.load(Ordering::SeqCst) {
                         break;
                     }
                 }
@@ -160,7 +181,10 @@ impl NetworkClient {
                         .ok();
                 }
 
+                drop(tx);
                 drop(sender);
+
+                task.await?;
 
                 let result = composable_response
                     .lock()
@@ -212,7 +236,6 @@ impl NetworkClient {
     }
 
     async fn handle_json(
-        &self,
         composable_response: Arc<Mutex<serde_json::Value>>,
         json_value: serde_json::Value,
         sender: Arc<Mutex<Sender<String>>>,
@@ -237,6 +260,7 @@ impl NetworkClient {
                 .ok();
         }
     }
+
     /// This function is actually handles the SSE stream from the llm
     /// There are two cases handled here so far:
     ///  - llm text answer: the `"content"` field is getting concantinated during
@@ -606,7 +630,7 @@ mod tests {
             events.push(data);
         }
 
-        let content = result
+        let content = dbg!(result)
             .unwrap()
             .get("choices")
             .unwrap()

@@ -15,13 +15,7 @@ use reqwest::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
-use tokio::{
-    sync::{
-        mpsc::{self, Sender},
-        Mutex,
-    },
-    task,
-};
+use tokio::sync::{mpsc::Sender, Mutex};
 
 use crate::{
     logger,
@@ -133,9 +127,22 @@ impl NetworkClient {
                         Self::handle_json(composable, combined, cloned_sender).await;
                         buffer.clear();
                     } else {
-                        match serde_json::from_str(&event.data) {
+                        match serde_json::from_str::<Value>(&event.data) {
                             Ok(json_value) => {
-                                Self::handle_json(composable, json_value, cloned_sender).await;
+                                Self::handle_json(
+                                    composable,
+                                    json_value.clone(),
+                                    cloned_sender,
+                                )
+                                .await;
+                                if json_value
+                                    .as_object()
+                                    .and_then(|obj| obj.get("usage"))
+                                    .and_then(|value| value.as_null())
+                                    .is_none()
+                                {
+                                    break; // fuckers from together never gives a fuck about to send [DONE] token for R1
+                                }
                             }
                             Err(e) => {
                                 if e.is_eof() {
@@ -173,8 +180,7 @@ impl NetworkClient {
                 Err(anyhow::anyhow!(format!(
                     "Request failed with status: {}",
                     response.status()
-                ))
-                .into())
+                )))
             }
         } else if response.status().is_success() {
             let json_body = response
@@ -207,8 +213,7 @@ impl NetworkClient {
             Err(anyhow::anyhow!(format!(
                 "Request failed with status: {}",
                 response.status()
-            ))
-            .into())
+            )))
         }
     }
 
@@ -229,7 +234,7 @@ impl NetworkClient {
             .and_then(|c| c.as_array())
             .and_then(|arr| arr.first())
             .and_then(|first| first.as_object())
-            .and_then(|first_object| Self::obtain_delta(first_object))
+            .and_then(Self::obtain_delta)
         {
             info!("send_json: {:?}", content);
             sender
@@ -360,10 +365,10 @@ impl NetworkClient {
             }
         }
 
-        for value in map.values() {
+        if let Some(value) = map.values().next() {
             return value
                 .as_object()
-                .and_then(|map| Self::obtain_delta(map));
+                .and_then(Self::obtain_delta);
         }
 
         None

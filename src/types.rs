@@ -121,7 +121,7 @@ impl From<&CacheEntry> for SublimeOutputContent {
     fn from(content: &CacheEntry) -> Self {
         SublimeOutputContent {
             content: content.content.clone(),
-            role: content.role.clone(),
+            role: content.role,
         }
     }
 }
@@ -277,43 +277,43 @@ impl AssistantSettings {
         }
 
         if let Some(RustyEnum::Float(value)) = dict.get("temperature") {
-            default.temperature = Some(value.clone().into());
+            default.temperature = Some(*value);
         }
 
         if let Some(RustyEnum::Int(value)) = dict.get("max_tokens") {
-            default.max_tokens = Some(value.clone());
+            default.max_tokens = Some(*value);
         }
 
         if let Some(RustyEnum::Int(value)) = dict.get("max_completion_tokens") {
-            default.max_completion_tokens = Some(value.clone()); // TODO: This should be self exclusive with max_tokens
+            default.max_completion_tokens = Some(*value); // TODO: This should be self exclusive with max_tokens
         }
 
         if let Some(RustyEnum::Int(value)) = dict.get("top_p") {
-            default.top_p = Some(value.clone());
+            default.top_p = Some(*value);
         }
 
         if let Some(RustyEnum::Int(value)) = dict.get("frequency_penalty") {
-            default.frequency_penalty = Some(value.clone().into());
+            default.frequency_penalty = Some(*value);
         }
 
         if let Some(RustyEnum::Int(value)) = dict.get("presence_penalty") {
-            default.presence_penalty = Some(value.clone().into());
+            default.presence_penalty = Some(*value);
         }
 
         if let Some(RustyEnum::Bool(value)) = dict.get("tools") {
-            default.tools = Some(value.clone());
+            default.tools = Some(*value);
         }
 
         if let Some(RustyEnum::Bool(value)) = dict.get("parallel_tool_calls") {
-            default.parallel_tool_calls = Some(value.clone());
+            default.parallel_tool_calls = Some(*value);
         }
 
         if let Some(RustyEnum::Bool(value)) = dict.get("stream") {
-            default.stream = value.clone();
+            default.stream = *value;
         }
 
         if let Some(RustyEnum::Bool(value)) = dict.get("advertisement") {
-            default.advertisement = value.clone();
+            default.advertisement = *value;
         }
 
         if let Some(RustyEnum::String(value)) = dict.get("api_type") {

@@ -66,7 +66,9 @@ impl PythonWorker {
         let rt = Runtime::new().expect("Failed to create runtime");
         let worker_clone = self.worker.clone();
         thread::spawn(move || {
-            let result = rt.block_on(async move {
+            
+
+            rt.block_on(async move {
                 worker_clone
                     .run(
                         view_id,
@@ -76,9 +78,7 @@ impl PythonWorker {
                         Function::new(handler).func,
                     )
                     .await
-            });
-
-            result
+            })
         });
 
         Ok(())

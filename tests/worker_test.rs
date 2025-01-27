@@ -409,6 +409,10 @@ async fn test_remote_server_third_party_fucntion_call() {
     assistant_settings.token = env::var("TOGETHER_API_TOKEN").ok();
     assistant_settings.chat_model = "meta-llama/Llama-3.3-70B-Instruct-Turbo".to_string();
     assistant_settings.stream = true;
+    assistant_settings.assistant_role = Some(
+        "Please call a function create file BUT ONLY FUCKING ONCE! TELL ME THE RESULT ON IT'S END"
+            .to_string(),
+    );
     assistant_settings.tools = Some(true);
 
     let prompt_mode = PromptMode::View;

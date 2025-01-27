@@ -191,6 +191,10 @@ impl NetworkClient {
                 }
 
                 drop(sender);
+                info!(
+                    "composable_response: {:?}",
+                    composable_response
+                );
 
                 let result = composable_response
                     .lock()
@@ -718,7 +722,7 @@ mod tests {
             function_name.push(data);
         }
 
-        let binding = result.unwrap();
+        let binding = dbg!(result).unwrap();
         let tool_calls_array = binding
             .get("choices")
             .unwrap()

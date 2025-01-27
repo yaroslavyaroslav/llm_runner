@@ -87,6 +87,14 @@ impl LlmRunner {
             }
             let content = LlmRunner::handle_function_call(tool_calls[0].clone());
 
+            for item in content.clone() {
+                cacher
+                    .lock()
+                    .await
+                    .write_entry(&CacheEntry::from(item))
+                    .ok();
+            }
+
             Box::pin(Self::execute(
                 provider,
                 cacher,

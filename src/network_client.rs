@@ -119,42 +119,31 @@ impl NetworkClient {
 
         if stream {
             if response.status().is_success() {
-                let (tx, mut rx) = mpsc::channel::<String>(100);
-                let mut text_buffer = String::new();
                 let mut stream = response
                     .bytes_stream()
                     .eventsource();
-                let composable = Arc::clone(&composable_response);
-                let cloned_sender = Arc::clone(&sender);
+                let mut buffer = String::new();
 
-                let task = task::spawn(async move {
-                    while let Some(json) = rx.recv().await {
-                        let composable = Arc::clone(&composable);
-                        let cloned_sender = Arc::clone(&cloned_sender);
+                while let Some(Ok(event)) = stream.next().await {
+                    let composable = Arc::clone(&composable_response);
+                    let cloned_sender = Arc::clone(&sender);
 
-                        info!("received json: {:?}", json);
-                        if let Ok(combined) = serde_json::from_str(&text_buffer) {
-                            Self::handle_json(composable, combined, cloned_sender).await;
-                            text_buffer.clear();
-                        } else {
-                            match serde_json::from_str(&json) {
-                                Ok(json_value) => {
-                                    Self::handle_json(composable, json_value, cloned_sender).await;
-                                }
-                                Err(e) => {
-                                    if e.is_eof() {
-                                        text_buffer.push_str(&json);
-                                    }
+                    info!("received json: {:?}", event.data);
+                    if let Ok(combined) = serde_json::from_str(&buffer) {
+                        Self::handle_json(composable, combined, cloned_sender).await;
+                        buffer.clear();
+                    } else {
+                        match serde_json::from_str(&event.data) {
+                            Ok(json_value) => {
+                                Self::handle_json(composable, json_value, cloned_sender).await;
+                            }
+                            Err(e) => {
+                                if e.is_eof() {
+                                    buffer.push_str(&event.data);
                                 }
                             }
                         }
                     }
-                    drop(rx);
-                });
-
-                while let Some(Ok(event)) = stream.next().await {
-                    tx.send(event.clone().data.clone())
-                        .await?;
 
                     if event.data.contains("[DONE]") || cancel_flag.load(Ordering::SeqCst) {
                         break;
@@ -172,10 +161,7 @@ impl NetworkClient {
                         .ok();
                 }
 
-                drop(tx);
                 drop(sender);
-
-                task.await?;
 
                 let result = composable_response
                     .lock()

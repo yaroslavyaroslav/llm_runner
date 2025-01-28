@@ -102,7 +102,7 @@ impl LlmRunner {
                 assistant_settings,
                 sender,
                 cancel_flag,
-                false, // storing function calls chain disregarding user settings
+                true, // storing function calls chain disregarding user settings
             ))
             .await
         } else if store {

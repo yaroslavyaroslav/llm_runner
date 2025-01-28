@@ -142,7 +142,7 @@ impl NetworkClient {
                                     break; // fuckers from together never gives a fuck about to send [DONE] token for R1
                                 }
 
-                                Self::handle_json(composable, combined, cloned_sender).await;
+                                let _ = Self::handle_json(composable, combined, cloned_sender).await;
                                 buffer.clear();
                             } else {
                                 match serde_json::from_str::<Value>(&event.data) {
@@ -156,7 +156,7 @@ impl NetworkClient {
                                             break; // fuckers from together never gives a fuck about to send [DONE] token for R1
                                         }
 
-                                        Self::handle_json(
+                                        let _ = Self::handle_json(
                                             composable,
                                             json_value.clone(),
                                             cloned_sender,
@@ -269,13 +269,14 @@ impl NetworkClient {
         composable_response: Arc<Mutex<serde_json::Value>>,
         json_value: serde_json::Value,
         sender: Arc<Mutex<Sender<String>>>,
-    ) {
+    ) -> Result<()> {
         debug!("handle_json: {:?}", json_value);
 
         let mut result = composable_response
             .lock()
             .await;
-        Self::merge_json(dbg!(&mut result), dbg!(&json_value));
+
+        let _ = Self::merge_json(&mut result, &json_value);
 
         if let Some(content) = json_value
             .get("choices")
@@ -290,7 +291,16 @@ impl NetworkClient {
                 .await
                 .send(content)
                 .await
-                .ok();
+                .map_err(|e| {
+                    anyhow::anyhow!(format!(
+                        "Failed to send the data: {}",
+                        e
+                    ))
+                })
+        } else {
+            Err(anyhow::anyhow!(format!(
+                "Object has wrong :",
+            )))
         }
     }
 
@@ -303,7 +313,7 @@ impl NetworkClient {
     ///
     /// The main assumption here is that the response can never be mixed
     /// to contain both `"content"` and `"tool_calls"` in a single stream.
-    fn merge_json(base: &mut Value, addition: &Value) {
+    fn merge_json(base: &mut Value, addition: &Value) -> Result<()> {
         match (base, addition) {
             (Value::Object(base_map), Value::Object(addition_map)) => {
                 for (key, value) in addition_map {
@@ -326,41 +336,44 @@ impl NetworkClient {
                                     .and_then(|v| v.as_array_mut()),
                                 value.as_array(),
                             ) {
-                                Self::merge_tool_calls(base_array, addition_array.to_vec());
+                                let _ = Self::merge_tool_calls(base_array, addition_array.to_vec());
                             } else {
                                 base_map.insert(key.to_string(), value.clone());
                             }
                         }
                         _ => {
-                            Self::merge_json(
+                            let _ = Self::merge_json(
                                 base_map
                                     .entry(key)
                                     .or_insert(Value::Null),
                                 value,
-                            )
+                            );
                         }
                     }
                 }
+                Ok(())
             }
             (Value::Array(base_array), Value::Array(addition_array)) => {
-                Self::merge_json(&mut base_array[0], &addition_array[0]);
+                Self::merge_json(&mut base_array[0], &addition_array[0])
             }
             (base, addition) => {
                 *base = addition.clone();
+                Ok(())
             }
         }
     }
 
-    fn merge_tool_calls(base_array: &mut [Value], addition_array: Vec<Value>) {
+    fn merge_tool_calls(base_array: &mut [Value], addition_array: Vec<Value>) -> Result<()> {
         for (base_item, addition_item) in base_array
             .iter_mut()
             .zip(addition_array)
         {
-            Self::merge_tool_call(base_item, &addition_item);
+            let _ = Self::merge_tool_call(base_item, &addition_item);
         }
+        Ok(())
     }
 
-    fn merge_tool_call(base_item: &mut Value, addition_item: &Value) {
+    fn merge_tool_call(base_item: &mut Value, addition_item: &Value) -> Result<()> {
         if let (Some(base_args), Some(addition_args)) = (
             base_item
                 .get_mut("function")
@@ -382,6 +395,7 @@ impl NetworkClient {
                 *base_args = addition_args.clone();
             }
         }
+        Ok(())
     }
 
     /// This function extracts a plain string for streaming it into UI

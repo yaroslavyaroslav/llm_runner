@@ -6,6 +6,7 @@ use std::{
     fs,
     sync::{Arc, Mutex},
     thread::sleep,
+    time::Duration,
 };
 
 use common::mocks::SequentialResponder;
@@ -13,7 +14,7 @@ use reqwest::header::CONTENT_TYPE;
 use rust_helper::{types::*, worker::*};
 use serde_json::json;
 use tempfile::TempDir;
-use tokio::test;
+use tokio::{test, time::timeout};
 use wiremock::{
     matchers::{method, path},
     MockServer,
@@ -428,21 +429,29 @@ async fn test_remote_server_third_party_fucntion_call() {
         tool_id: None,
     };
 
-    let result = worker
-        .run(
-            1,
-            vec![contents],
-            prompt_mode,
-            assistant_settings,
-            Arc::new(|_| {}),
-        )
-        .await;
+    let result = timeout(Duration::from_secs(3), async {
+        worker
+            .run(
+                1,
+                vec![contents],
+                prompt_mode,
+                assistant_settings,
+                Arc::new(|_| {}),
+            )
+            .await
+    })
+    .await;
 
-    assert!(
-        result.is_ok(),
-        "Expected Ok, got Err: {:?}",
-        result
-    );
+    match result {
+        Ok(res) => {
+            assert!(
+                res.is_ok(),
+                "Expected Ok, got Err: {:?}",
+                res
+            )
+        }
+        Err(elapsed) => panic!("Timeout exceeded: {:?}", elapsed),
+    }
 }
 
 #[test]

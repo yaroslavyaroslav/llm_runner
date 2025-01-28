@@ -1,6 +1,7 @@
 use std::{collections::HashMap, str::FromStr};
 
 use pyo3::{pyclass, pymethods, FromPyObject};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
 
@@ -77,12 +78,16 @@ impl From<AssistantMessage> for CacheEntry {
             .as_ref()
             .and_then(|calls| calls.first().cloned());
 
-        // FIXME: Content should be parsed to extract thinking part
-        // content should be set without thinking part.
-        let thinking = content.content.clone();
+        let (t_content, thinking) = if let Some(mut content_str) = content.content {
+            let thinking_part = Self::extract_thinking_part(&mut content_str);
+
+            (Some(content_str), thinking_part)
+        } else {
+            (None, None)
+        };
 
         CacheEntry {
-            content: content.content,
+            content: t_content,
             thinking,
             path: None,
             scope: None,
@@ -90,6 +95,28 @@ impl From<AssistantMessage> for CacheEntry {
             tool_call: first_tool_call.clone(),
             tool_call_id: first_tool_call.map(|t| t.id),
         }
+    }
+}
+
+impl CacheEntry {
+    fn extract_thinking_part(content: &mut String) -> Option<String> {
+        let re = Regex::new(r"(?s)<think>(.*?)</think>").ok()?;
+        re.captures(&content.clone())
+            .and_then(|caps| {
+                let thinking_part = caps
+                    .get(1)
+                    .map(|m| m.as_str().to_string());
+                if let Some(thinking) = &thinking_part {
+                    *content = content
+                        .replace(&format!("{}", thinking), "") // keep tags in place
+                        // .trim()
+                        .to_string();
+                }
+                thinking_part.map(|s| {
+                    s /*.trim()*/
+                        .to_string()
+                })
+            })
     }
 }
 
@@ -119,8 +146,19 @@ pub struct SublimeOutputContent {
 
 impl From<&CacheEntry> for SublimeOutputContent {
     fn from(content: &CacheEntry) -> Self {
+        let output_contnt = if let Some(mut tmp) = content.content.clone() {
+            if let Some(thinking) = &content.thinking {
+                tmp = tmp.replace(
+                    "<think></think>",
+                    &format!("<think>{}</think>", thinking),
+                );
+            }
+            Some(tmp)
+        } else {
+            content.content.clone()
+        };
         SublimeOutputContent {
-            content: content.content.clone(),
+            content: output_contnt,
             role: content.role,
         }
     }

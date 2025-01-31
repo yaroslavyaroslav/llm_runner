@@ -57,6 +57,9 @@ pub struct OpenAICompletionRequest {
     pub(crate) presence_penalty: Option<f64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) reasoning_effort: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) parallel_tool_calls: Option<bool>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -135,6 +138,7 @@ impl OpenAICompletionRequest {
             temperature: settings.temperature,
             max_tokens: settings.max_tokens,
             max_completion_tokens: settings.max_completion_tokens,
+            reasoning_effort: settings.reasoning_effort,
             top_p: settings
                 .top_p
                 .map(|t| t as f64),
@@ -190,7 +194,7 @@ impl OpenAIMessage {
     pub(crate) fn from_system(value: String) -> Self {
         OpenAIMessage {
             content: vec![MessageContent::from_text(value)].into(),
-            role: Roles::System,
+            role: Roles::Developer,
             tool_call_id: None,
             name: None,
             tool_calls: None,
@@ -383,6 +387,7 @@ pub enum Roles {
     Assistant,
     Tool,
     System,
+    Developer,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -561,6 +566,7 @@ mod tests {
             presence_penalty: Some(0.0),
             tools: None,
             parallel_tool_calls: None,
+            reasoning_effort: None,
         };
 
         let serialized = serde_json::to_string(&request).unwrap();
@@ -659,6 +665,7 @@ mod tests {
             }]),
 
             parallel_tool_calls: Some(false),
+            reasoning_effort: None,
         };
 
         let serialized = serde_json::to_string(&request).unwrap();
@@ -742,6 +749,7 @@ mod tests {
             presence_penalty: None,
             tools: None,
             parallel_tool_calls: None,
+            reasoning_effort: None,
         };
 
         let serialized = serde_json::to_string(&request).unwrap();

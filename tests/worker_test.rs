@@ -10,8 +10,8 @@ use std::{
 };
 
 use common::mocks::SequentialResponder;
+use llm_runner::{types::*, worker::*};
 use reqwest::header::CONTENT_TYPE;
-use rust_helper::{types::*, worker::*};
 use serde_json::json;
 use tempfile::TempDir;
 use tokio::{test, time::timeout};

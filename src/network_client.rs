@@ -354,7 +354,20 @@ impl NetworkClient {
                 Ok(())
             }
             (Value::Array(base_array), Value::Array(addition_array)) => {
-                Self::merge_json(&mut base_array[0], &addition_array[0])
+                /*
+                 TODO: It bugs on together stream, the one that sends usage:
+                 ```json
+                 {"id":"909940d8b881e294","object":"chat.completion.chunk",
+                 "created":1738154034,"choices":[],"model":"deepseek-ai/DeepSeek-R1",
+                 "usage":{"prompt_tokens":15634,"total_tokens":16382,"completion_tokens":748}}
+                 ```
+
+                 So this condition is a dummy attempt to fix it.
+                */
+                if !&addition_array.is_empty() {
+                    let _ = Self::merge_json(&mut base_array[0], &addition_array[0]);
+                }
+                Ok(())
             }
             (base, addition) => {
                 *base = addition.clone();
@@ -936,6 +949,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             max_completion_tokens: None,
+            reasoning_effort: None,
             top_p: None,
             frequency_penalty: None,
             presence_penalty: None,

@@ -8,7 +8,7 @@ fn main() {
     let re = Regex::new(r"(?s)<think>(.*?)</think>")
         .ok()
         .unwrap();
-    re.captures(&content.clone())
+    re.captures(&content)
         .and_then(|caps| {
             let thinking_part = caps
                 .get(1)

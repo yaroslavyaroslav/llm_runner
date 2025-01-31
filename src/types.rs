@@ -239,6 +239,10 @@ pub struct AssistantSettings {
 
     #[pyo3(get)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+
+    #[pyo3(get)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub top_p: Option<usize>,
 
     #[pyo3(get)]
@@ -314,6 +318,10 @@ impl AssistantSettings {
             default.assistant_role = Some(value.clone());
         }
 
+        if let Some(RustyEnum::String(value)) = dict.get("reasoning_effort") {
+            default.reasoning_effort = Some(value.clone());
+        }
+
         if let Some(RustyEnum::Float(value)) = dict.get("temperature") {
             default.temperature = Some(*value);
         }
@@ -370,6 +378,7 @@ impl Default for AssistantSettings {
             chat_model: "gpt-4o-mini".to_string(),
             assistant_role: None,
             url: "https://api.openai.com/v1/chat/completions".to_string(),
+            reasoning_effort: None,
             token: None,
             temperature: None,
             max_tokens: None,

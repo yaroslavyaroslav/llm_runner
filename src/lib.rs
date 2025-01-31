@@ -16,7 +16,7 @@ use py_worker::{drop_all, read_all_cache, read_model, write_model, write_to_cach
 use pyo3::prelude::*;
 use types::{ApiType, AssistantSettings, InputKind, PromptMode, SublimeInputContent, SublimeOutputContent};
 
-#[pymodule]
+#[pymodule(name = "llm_runner")]
 fn rust_helper(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PythonWorker>()?;
     m.add_class::<AssistantSettings>()?;

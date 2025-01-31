@@ -4,7 +4,7 @@ import time
 from typing import List
 
 import pytest
-from rust_helper import (
+from llm_runner import (
     AssistantSettings,  # type: ignore
     InputKind,  # type: ignore
     PromptMode,  # type: ignore

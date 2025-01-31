@@ -1,6 +1,7 @@
 use std::{collections::HashMap, str::FromStr};
 
 use pyo3::{pyclass, pymethods, FromPyObject};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
 
@@ -77,12 +78,16 @@ impl From<AssistantMessage> for CacheEntry {
             .as_ref()
             .and_then(|calls| calls.first().cloned());
 
-        // FIXME: Content should be parsed to extract thinking part
-        // content should be set without thinking part.
-        let thinking = content.content.clone();
+        let (t_content, thinking) = if let Some(mut content_str) = content.content {
+            let thinking_part = Self::extract_thinking_part(&mut content_str);
+
+            (Some(content_str), thinking_part)
+        } else {
+            (None, None)
+        };
 
         CacheEntry {
-            content: content.content,
+            content: t_content,
             thinking,
             path: None,
             scope: None,
@@ -90,6 +95,28 @@ impl From<AssistantMessage> for CacheEntry {
             tool_call: first_tool_call.clone(),
             tool_call_id: first_tool_call.map(|t| t.id),
         }
+    }
+}
+
+impl CacheEntry {
+    fn extract_thinking_part(content: &mut String) -> Option<String> {
+        let re = Regex::new(r"(?s)<think>(.*?)</think>").ok()?;
+        re.captures(&content.clone())
+            .and_then(|caps| {
+                let thinking_part = caps
+                    .get(1)
+                    .map(|m| m.as_str().to_string());
+                if let Some(thinking) = &thinking_part {
+                    *content = content
+                        .replace(&format!("{}", thinking), "") // keep tags in place
+                        // .trim()
+                        .to_string();
+                }
+                thinking_part.map(|s| {
+                    s /*.trim()*/
+                        .to_string()
+                })
+            })
     }
 }
 
@@ -119,9 +146,20 @@ pub struct SublimeOutputContent {
 
 impl From<&CacheEntry> for SublimeOutputContent {
     fn from(content: &CacheEntry) -> Self {
+        let output_contnt = if let Some(mut tmp) = content.content.clone() {
+            if let Some(thinking) = &content.thinking {
+                tmp = tmp.replace(
+                    "<think></think>",
+                    &format!("<think>{}</think>", thinking),
+                );
+            }
+            Some(tmp)
+        } else {
+            content.content.clone()
+        };
         SublimeOutputContent {
-            content: content.content.clone(),
-            role: content.role.clone(),
+            content: output_contnt,
+            role: content.role,
         }
     }
 }
@@ -201,6 +239,10 @@ pub struct AssistantSettings {
 
     #[pyo3(get)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+
+    #[pyo3(get)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub top_p: Option<usize>,
 
     #[pyo3(get)]
@@ -224,6 +266,18 @@ pub struct AssistantSettings {
 
     #[pyo3(get)]
     pub advertisement: bool,
+
+    #[pyo3(get)]
+    pub api_type: ApiType,
+}
+
+#[pyclass(eq, eq_int)]
+#[derive(EnumString, Display, Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiType {
+    OpenAi,
+    PlainText,
+    Antropic,
 }
 
 #[derive(FromPyObject, Clone)]
@@ -264,44 +318,52 @@ impl AssistantSettings {
             default.assistant_role = Some(value.clone());
         }
 
+        if let Some(RustyEnum::String(value)) = dict.get("reasoning_effort") {
+            default.reasoning_effort = Some(value.clone());
+        }
+
         if let Some(RustyEnum::Float(value)) = dict.get("temperature") {
-            default.temperature = Some(value.clone().into());
+            default.temperature = Some(*value);
         }
 
         if let Some(RustyEnum::Int(value)) = dict.get("max_tokens") {
-            default.max_tokens = Some(value.clone());
+            default.max_tokens = Some(*value);
         }
 
         if let Some(RustyEnum::Int(value)) = dict.get("max_completion_tokens") {
-            default.max_completion_tokens = Some(value.clone()); // TODO: This should be self exclusive with max_tokens
+            default.max_completion_tokens = Some(*value); // TODO: This should be self exclusive with max_tokens
         }
 
         if let Some(RustyEnum::Int(value)) = dict.get("top_p") {
-            default.top_p = Some(value.clone());
+            default.top_p = Some(*value);
         }
 
         if let Some(RustyEnum::Int(value)) = dict.get("frequency_penalty") {
-            default.frequency_penalty = Some(value.clone().into());
+            default.frequency_penalty = Some(*value);
         }
 
         if let Some(RustyEnum::Int(value)) = dict.get("presence_penalty") {
-            default.presence_penalty = Some(value.clone().into());
+            default.presence_penalty = Some(*value);
         }
 
         if let Some(RustyEnum::Bool(value)) = dict.get("tools") {
-            default.tools = Some(value.clone());
+            default.tools = Some(*value);
         }
 
         if let Some(RustyEnum::Bool(value)) = dict.get("parallel_tool_calls") {
-            default.parallel_tool_calls = Some(value.clone());
+            default.parallel_tool_calls = Some(*value);
         }
 
         if let Some(RustyEnum::Bool(value)) = dict.get("stream") {
-            default.stream = value.clone();
+            default.stream = *value;
         }
 
         if let Some(RustyEnum::Bool(value)) = dict.get("advertisement") {
-            default.advertisement = value.clone();
+            default.advertisement = *value;
+        }
+
+        if let Some(RustyEnum::String(value)) = dict.get("api_type") {
+            default.api_type = ApiType::from_str(value).unwrap_or(ApiType::PlainText);
         }
 
         default
@@ -316,6 +378,7 @@ impl Default for AssistantSettings {
             chat_model: "gpt-4o-mini".to_string(),
             assistant_role: None,
             url: "https://api.openai.com/v1/chat/completions".to_string(),
+            reasoning_effort: None,
             token: None,
             temperature: None,
             max_tokens: None,
@@ -327,6 +390,7 @@ impl Default for AssistantSettings {
             parallel_tool_calls: None,
             stream: true,
             advertisement: true,
+            api_type: ApiType::PlainText,
         }
     }
 }

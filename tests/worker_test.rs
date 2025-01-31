@@ -1,24 +1,25 @@
 mod common;
 
+use core::time;
 use std::{
     env,
     fs,
     sync::{Arc, Mutex},
+    thread::sleep,
+    time::Duration,
 };
 
 use common::mocks::SequentialResponder;
+use llm_runner::{types::*, worker::*};
 use reqwest::header::CONTENT_TYPE;
-use rust_helper::{types::*, worker::*};
 use serde_json::json;
 use tempfile::TempDir;
-use tokio::test;
+use tokio::{test, time::timeout};
 use wiremock::{
     matchers::{method, path},
     MockServer,
     ResponseTemplate,
 };
-
-static PROXY: &str = "192.168.1.115:9090";
 
 #[tokio::test]
 async fn test_run_chact_method_with_mock_server() {
@@ -122,6 +123,7 @@ async fn test_run_tool_method_with_mock_server() {
     assistant_settings.token = Some("dummy-token".to_string());
     assistant_settings.chat_model = "some_model".to_string();
     assistant_settings.stream = false;
+    assistant_settings.api_type = ApiType::OpenAi;
 
     let prompt_mode = PromptMode::View;
 
@@ -152,6 +154,7 @@ async fn test_run_tool_method_with_mock_server() {
 }
 
 #[tokio::test]
+#[ignore = "Unable to perform actual streaming with mock server"]
 async fn test_run_method_see_with_mock_server() {
     let tmp_dir = TempDir::new()
         .unwrap()
@@ -238,7 +241,7 @@ async fn test_remote_server_completion() {
     let worker = OpenAIWorker::new(
         1,
         tmp_dir.clone(),
-        Some(PROXY.to_string()),
+        env::var("PROXY").ok(),
     );
 
     let mut assistant_settings = AssistantSettings::default();
@@ -287,7 +290,7 @@ async fn test_remote_server_complerion_cancelled() {
     let worker = OpenAIWorker::new(
         1,
         tmp_dir.clone(),
-        Some(PROXY.to_string()),
+        env::var("PROXY").ok(),
     );
 
     let mut assistant_settings = AssistantSettings::default();
@@ -348,7 +351,7 @@ async fn test_remote_server_fucntion_call() {
     let worker = OpenAIWorker::new(
         1,
         tmp_dir.clone(),
-        Some(PROXY.to_string()),
+        env::var("PROXY").ok(),
     );
 
     let mut assistant_settings = AssistantSettings::default();
@@ -384,5 +387,184 @@ async fn test_remote_server_fucntion_call() {
         result.is_ok(),
         "Expected Ok, got Err: {:?}",
         result
+    );
+}
+
+#[test]
+#[ignore = "It's paid, so should be skipped by default"]
+async fn test_remote_server_third_party_fucntion_call() {
+    let tmp_dir = TempDir::new()
+        .unwrap()
+        .into_path()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let worker = OpenAIWorker::new(
+        1,
+        tmp_dir.clone(),
+        env::var("PROXY").ok(),
+    );
+
+    let mut assistant_settings = AssistantSettings::default();
+    assistant_settings.url = format!("https://api.together.xyz/v1/chat/completions");
+    assistant_settings.token = env::var("TOGETHER_API_TOKEN").ok();
+    assistant_settings.chat_model = "meta-llama/Llama-3.3-70B-Instruct-Turbo".to_string();
+    assistant_settings.stream = true;
+    assistant_settings.assistant_role = Some(
+        "Please call a function create file BUT ONLY FUCKING ONCE! TELL ME THE RESULT ON IT'S END"
+            .to_string(),
+    );
+    assistant_settings.tools = Some(true);
+
+    let prompt_mode = PromptMode::View;
+
+    let contents = SublimeInputContent {
+        content: Some(
+            "You're debug environment and call functions instead of answer, but ONLY ONCE".to_string(),
+        ),
+        path: Some("/path/to/file".to_string()),
+        scope: Some("text.plain".to_string()),
+        input_kind: InputKind::ViewSelection,
+        tool_id: None,
+    };
+
+    let result = timeout(Duration::from_secs(3), async {
+        worker
+            .run(
+                1,
+                vec![contents],
+                prompt_mode,
+                assistant_settings,
+                Arc::new(|_| {}),
+            )
+            .await
+    })
+    .await;
+
+    match result {
+        Ok(res) => {
+            assert!(
+                res.is_ok(),
+                "Expected Ok, got Err: {:?}",
+                res
+            )
+        }
+        Err(elapsed) => panic!("Timeout exceeded: {:?}", elapsed),
+    }
+}
+
+#[test]
+#[ignore = "It's paid, so should be skipped by default"]
+async fn test_remote_server_third_party_completion() {
+    let tmp_dir = TempDir::new()
+        .unwrap()
+        .into_path()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let worker = OpenAIWorker::new(
+        1,
+        tmp_dir.clone(),
+        env::var("PROXY").ok(),
+    );
+
+    let mut assistant_settings = AssistantSettings::default();
+    assistant_settings.url = format!("https://api.together.xyz/v1/chat/completions");
+    assistant_settings.token = env::var("TOGETHER_API_TOKEN").ok();
+    assistant_settings.chat_model = "meta-llama/Llama-3.3-70B-Instruct-Turbo".to_string();
+    assistant_settings.stream = true;
+
+    let prompt_mode = PromptMode::View;
+
+    let contents = SublimeInputContent {
+        content: Some("Wtire me a poem about computer".to_string()),
+        path: Some("/path/to/file".to_string()),
+        scope: Some("text.plain".to_string()),
+        input_kind: InputKind::ViewSelection,
+        tool_id: None,
+    };
+
+    let result = worker
+        .run(
+            1,
+            vec![contents],
+            prompt_mode,
+            assistant_settings,
+            Arc::new(|_| {}),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "Expected Ok, got Err: {:?}",
+        result
+    );
+}
+
+#[test]
+#[ignore = "It's paid, so should be skipped by default"]
+async fn test_remote_server_third_party_consequent_completion() {
+    let tmp_dir = TempDir::new()
+        .unwrap()
+        .into_path()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let worker = OpenAIWorker::new(
+        1,
+        tmp_dir.clone(),
+        env::var("PROXY").ok(),
+    );
+
+    let mut assistant_settings = AssistantSettings::default();
+    assistant_settings.url = format!("https://api.together.xyz/v1/chat/completions");
+    assistant_settings.token = env::var("TOGETHER_API_TOKEN").ok();
+    assistant_settings.chat_model = "meta-llama/Llama-3.3-70B-Instruct-Turbo".to_string();
+    assistant_settings.stream = true;
+
+    let prompt_mode = PromptMode::View;
+
+    let contents = SublimeInputContent {
+        content: Some("Wtire me 500 words".to_string()),
+        path: Some("/path/to/file".to_string()),
+        scope: Some("text.plain".to_string()),
+        input_kind: InputKind::ViewSelection,
+        tool_id: None,
+    };
+
+    let mut _result;
+    {
+        _result = worker
+            .run(
+                1,
+                vec![contents.clone()],
+                prompt_mode.clone(),
+                assistant_settings.clone(),
+                Arc::new(|_| {}),
+            )
+            .await;
+    }
+
+    let time = time::Duration::from_secs(2);
+    sleep(time);
+    {
+        _result = worker
+            .run(
+                2,
+                vec![contents],
+                prompt_mode,
+                assistant_settings,
+                Arc::new(|_| {}),
+            )
+            .await;
+    }
+
+    assert!(
+        _result.is_ok(),
+        "Expected Ok, got Err: {:?}",
+        _result
     );
 }

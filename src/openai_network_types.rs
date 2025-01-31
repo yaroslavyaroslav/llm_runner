@@ -6,13 +6,29 @@ use strum_macros::{Display, EnumString};
 
 use crate::{
     tools_definition::FUNCTIONS,
-    types::{AssistantSettings, CacheEntry, SublimeInputContent},
+    types::{ApiType, AssistantSettings, CacheEntry, SublimeInputContent},
 };
+
+#[derive(Debug)]
+pub enum OpenAIRequestMessage {
+    OpenAIMessage(OpenAIMessage),
+    OpenAIPlainTextMessage(OpenAIPlainTextMessage),
+}
+
+impl serde::ser::Serialize for OpenAIRequestMessage {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: serde::ser::Serializer {
+        match self {
+            OpenAIRequestMessage::OpenAIMessage(message) => message.serialize(serializer),
+            OpenAIRequestMessage::OpenAIPlainTextMessage(message) => message.serialize(serializer),
+        }
+    }
+}
 
 #[derive(Debug, Serialize)]
 #[allow(unused)]
 pub struct OpenAICompletionRequest {
-    pub(crate) messages: Vec<OpenAIMessage>,
+    pub(crate) messages: Vec<OpenAIRequestMessage>,
 
     pub(crate) stream: bool,
 
@@ -39,6 +55,9 @@ pub struct OpenAICompletionRequest {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) presence_penalty: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) reasoning_effort: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) parallel_tool_calls: Option<bool>,
@@ -72,21 +91,45 @@ impl OpenAICompletionRequest {
                     system_message
                 }
             };
-            messages.push(OpenAIMessage::from_system(content));
+
+            if settings.api_type == ApiType::OpenAi {
+                messages.push(OpenAIRequestMessage::OpenAIMessage(
+                    OpenAIMessage::from_system(content),
+                ))
+            } else if settings.api_type == ApiType::PlainText {
+                messages.push(
+                    OpenAIRequestMessage::OpenAIPlainTextMessage(OpenAIPlainTextMessage::from_system(
+                        content,
+                    )),
+                )
+            }
         }
 
-        messages.extend(
-            cache_entries
-                .into_iter()
-                .map(OpenAIMessage::from),
-        );
-
-        messages.extend(
-            sublime_inputs
-                .into_iter()
-                .map(OpenAIMessage::from),
-        );
-
+        if settings.api_type == ApiType::OpenAi {
+            messages.extend(
+                cache_entries
+                    .into_iter()
+                    .map(|c| OpenAIRequestMessage::OpenAIMessage(OpenAIMessage::from(c))),
+            );
+            dbg!("1");
+            messages.extend(
+                sublime_inputs
+                    .into_iter()
+                    .map(|c| OpenAIRequestMessage::OpenAIMessage(OpenAIMessage::from(c))),
+            )
+        } else if settings.api_type == ApiType::PlainText {
+            messages.extend(
+                cache_entries
+                    .into_iter()
+                    .map(|c| OpenAIRequestMessage::OpenAIPlainTextMessage(OpenAIPlainTextMessage::from(c))),
+            );
+            dbg!("2");
+            messages.extend(
+                sublime_inputs
+                    .into_iter()
+                    .map(|c| OpenAIRequestMessage::OpenAIPlainTextMessage(OpenAIPlainTextMessage::from(c))),
+            )
+        }
         OpenAICompletionRequest {
             messages,
             stream: settings.stream,
@@ -95,6 +138,7 @@ impl OpenAICompletionRequest {
             temperature: settings.temperature,
             max_tokens: settings.max_tokens,
             max_completion_tokens: settings.max_completion_tokens,
+            reasoning_effort: settings.reasoning_effort,
             top_p: settings
                 .top_p
                 .map(|t| t as f64),
@@ -150,7 +194,7 @@ impl OpenAIMessage {
     pub(crate) fn from_system(value: String) -> Self {
         OpenAIMessage {
             content: vec![MessageContent::from_text(value)].into(),
-            role: Roles::System,
+            role: Roles::Developer,
             tool_call_id: None,
             name: None,
             tool_calls: None,
@@ -180,6 +224,64 @@ impl From<SublimeInputContent> for OpenAIMessage {
             content: value
                 .content
                 .map(|c| vec![MessageContent::from_text(c)]),
+            role: if value.tool_id.is_some() { Roles::Tool } else { Roles::User },
+            tool_call_id: value.tool_id,
+            name: None,
+            tool_calls: None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct OpenAIPlainTextMessage {
+    pub(crate) content: String,
+
+    pub(crate) role: Roles,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tool_call_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tool_calls: Option<Vec<ToolCall>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) name: Option<String>,
+}
+
+impl OpenAIPlainTextMessage {
+    pub(crate) fn from_system(value: String) -> Self {
+        Self {
+            content: value,
+            role: Roles::System,
+            tool_call_id: None,
+            name: None,
+            tool_calls: None,
+        }
+    }
+}
+
+impl From<CacheEntry> for OpenAIPlainTextMessage {
+    fn from(value: CacheEntry) -> Self {
+        Self {
+            content: value
+                .content
+                .unwrap_or("".to_string()), // TODO: Make the whole chain optional
+            role: value.role,
+            tool_call_id: value.tool_call_id,
+            name: None,
+            tool_calls: value
+                .tool_call
+                .map(|t| vec![t]),
+        }
+    }
+}
+
+impl From<SublimeInputContent> for OpenAIPlainTextMessage {
+    fn from(value: SublimeInputContent) -> Self {
+        Self {
+            content: value
+                .content
+                .unwrap_or("".to_string()), // TODO: Make the whole chain optional
             role: if value.tool_id.is_some() { Roles::Tool } else { Roles::User },
             tool_call_id: value.tool_id,
             name: None,
@@ -285,6 +387,7 @@ pub enum Roles {
     Assistant,
     Tool,
     System,
+    Developer,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -439,17 +542,19 @@ mod tests {
     #[test]
     fn test_openai_request_serialization_simple() {
         let request = OpenAICompletionRequest {
-            messages: vec![OpenAIMessage {
-                content: vec![MessageContent {
-                    r#type: OpenAIMessageType::Text,
-                    content: ContentWrapper::Text("Hello, world!".to_string()),
-                }]
-                .into(),
-                role: Roles::User,
-                tool_call_id: None,
-                name: Some("test".to_string()),
-                tool_calls: None,
-            }],
+            messages: vec![OpenAIRequestMessage::OpenAIMessage(
+                OpenAIMessage {
+                    content: vec![MessageContent {
+                        r#type: OpenAIMessageType::Text,
+                        content: ContentWrapper::Text("Hello, world!".to_string()),
+                    }]
+                    .into(),
+                    role: Roles::User,
+                    tool_call_id: None,
+                    name: Some("test".to_string()),
+                    tool_calls: None,
+                },
+            )],
             stream: false,
             chat_model: "gpt-3.5-turbo".to_string(),
             advertisement: false,
@@ -461,6 +566,7 @@ mod tests {
             presence_penalty: Some(0.0),
             tools: None,
             parallel_tool_calls: None,
+            reasoning_effort: None,
         };
 
         let serialized = serde_json::to_string(&request).unwrap();
@@ -493,7 +599,7 @@ mod tests {
     fn test_openai_request_serialization_full() {
         let request = OpenAICompletionRequest {
             messages: vec![
-                OpenAIMessage {
+                OpenAIRequestMessage::OpenAIMessage(OpenAIMessage {
                     content: vec![
                         MessageContent {
                             r#type: OpenAIMessageType::Text,
@@ -512,8 +618,8 @@ mod tests {
                     tool_call_id: Some("001".to_string()),
                     name: Some("test_user".to_string()),
                     tool_calls: None,
-                },
-                OpenAIMessage {
+                }),
+                OpenAIRequestMessage::OpenAIMessage(OpenAIMessage {
                     content: vec![MessageContent {
                         r#type: OpenAIMessageType::Text,
                         content: ContentWrapper::Text("This is the assistant speaking.".to_string()),
@@ -523,7 +629,7 @@ mod tests {
                     tool_call_id: None,
                     name: Some("assistant".to_string()),
                     tool_calls: None,
-                },
+                }),
             ],
             stream: true,
             chat_model: "gpt-4o".to_string(),
@@ -559,6 +665,7 @@ mod tests {
             }]),
 
             parallel_tool_calls: Some(false),
+            reasoning_effort: None,
         };
 
         let serialized = serde_json::to_string(&request).unwrap();
@@ -642,6 +749,7 @@ mod tests {
             presence_penalty: None,
             tools: None,
             parallel_tool_calls: None,
+            reasoning_effort: None,
         };
 
         let serialized = serde_json::to_string(&request).unwrap();

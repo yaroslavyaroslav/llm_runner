@@ -74,7 +74,7 @@ Defines specific request and response structures for OpenAI communication, inclu
 > [!NOTE]
 > `python 3.8`
    ```bash
-   pip install target/wheels/rust_helper-0.1.0-cp38-cp38-macosx_11_0_arm64.whl --target '/path/to/Sublime Text/Lib/python38/' --upgrade
+   pip install target/wheels/llm_runner-0.1.0-cp38-cp38-macosx_11_0_arm64.whl --target '/path/to/Sublime Text/Lib/python38/' --upgrade
    ```
 
 ### Usage

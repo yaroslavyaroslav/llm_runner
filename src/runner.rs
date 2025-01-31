@@ -87,6 +87,14 @@ impl LlmRunner {
             }
             let content = LlmRunner::handle_function_call(tool_calls[0].clone());
 
+            for item in content.clone() {
+                cacher
+                    .lock()
+                    .await
+                    .write_entry(&CacheEntry::from(item))
+                    .ok();
+            }
+
             Box::pin(Self::execute(
                 provider,
                 cacher,
@@ -94,22 +102,20 @@ impl LlmRunner {
                 assistant_settings,
                 sender,
                 cancel_flag,
-                false, // storing function calls chain disregarding user settings
+                true, // storing function calls chain disregarding user settings
             ))
             .await
+        } else if store {
+            cacher
+                .lock()
+                .await
+                .write_entry(&CacheEntry::from(
+                    result?.choices[0]
+                        .message
+                        .clone(),
+                ))
         } else {
-            if store {
-                cacher
-                    .lock()
-                    .await
-                    .write_entry(&CacheEntry::from(
-                        result?.choices[0]
-                            .message
-                            .clone(),
-                    ))
-            } else {
-                Ok(())
-            }
+            Ok(())
         }
     }
 

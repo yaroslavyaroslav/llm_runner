@@ -54,7 +54,7 @@ impl PythonWorker {
         }
     }
 
-    #[pyo3(signature = (view_id, prompt_mode, contents, assistant_settings, handler))]
+    #[pyo3(signature = (view_id, prompt_mode, contents, assistant_settings, handler, error_handler))]
     fn run(
         &mut self,
         view_id: usize,
@@ -62,12 +62,11 @@ impl PythonWorker {
         contents: Vec<SublimeInputContent>,
         assistant_settings: AssistantSettings,
         handler: PyObject,
+        error_handler: PyObject,
     ) -> PyResult<()> {
         let rt = Runtime::new().expect("Failed to create runtime");
         let worker_clone = self.worker.clone();
         thread::spawn(move || {
-            
-
             rt.block_on(async move {
                 worker_clone
                     .run(
@@ -76,6 +75,7 @@ impl PythonWorker {
                         prompt_mode,
                         assistant_settings,
                         Function::new(handler).func,
+                        Function::new(error_handler).func,
                     )
                     .await
             })
@@ -99,6 +99,7 @@ impl PythonWorker {
         contents: Vec<SublimeInputContent>,
         assistant_settings: AssistantSettings,
         handler: PyObject,
+        error_handler: PyObject,
     ) -> PyResult<()> {
         let rt = Runtime::new().expect("Failed to create runtime");
         let worker_clone = self.worker.clone();
@@ -110,6 +111,7 @@ impl PythonWorker {
                     prompt_mode,
                     assistant_settings,
                     Function::new(handler).func,
+                    Function::new(error_handler).func,
                 )
                 .await
         });

@@ -44,10 +44,6 @@ pub(crate) struct CacheEntry {
 
 impl From<SublimeInputContent> for CacheEntry {
     fn from(content: SublimeInputContent) -> Self {
-        // FIXME: Content should be parsed to extract thinking part
-        // content should be set without thinking part.
-        let thinking = content.content.clone();
-
         let role = match content.input_kind {
             InputKind::AssistantResponse => Roles::Assistant,
             _ => {

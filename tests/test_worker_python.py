@@ -13,22 +13,7 @@ from llm_runner import (
 )
 
 
-PROXY = '172.20.10.2:9090'
-
 PATH = '/tmp/'
-
-
-def my_handler(data: str) -> None:
-    print(f'Received data: {data}')
-
-
-# def test_prompt_mode_from_str():
-#     assert PromptMode('view') == PromptMode.View
-#     assert PromptMode('phantom') == PromptMode.Phantom
-#     assert PromptMode('VIEW') == PromptMode.View
-#     assert PromptMode('PHANTOM') == PromptMode.Phantom
-#     assert PromptMode('invalid') is None
-#     assert PromptMode('') is None
 
 
 def test_python_worker_initialization():
@@ -92,12 +77,17 @@ def test_sublime_input_content():
 
 
 def test_python_worker_plain_run():
-    worker = Worker(window_id=101, path=PATH, proxy=PROXY)
+    worker = Worker(window_id=101, path=PATH, proxy=os.environ.get('PROXY'))
 
     some_list: List[str] = []
+    error_list: List[str] = []
 
     def my_handler_1(data: str) -> None:
         some_list.append(data)
+        print(f'Received data: {data}')
+
+    def error_handler_1(data: str) -> None:
+        error_list.append(data)
         print(f'Received data: {data}')
 
     contents = SublimeInputContent(
@@ -117,7 +107,7 @@ def test_python_worker_plain_run():
 
     settings = AssistantSettings(dicttt)
 
-    worker.run(1, PromptMode.View, [contents], settings, my_handler_1)
+    worker.run(1, PromptMode.View, [contents], settings, my_handler_1, error_handler_1)
 
     time.sleep(2)
 
@@ -125,12 +115,17 @@ def test_python_worker_plain_run():
 
 
 def test_python_worker_sse_run():
-    worker = Worker(window_id=101, path=PATH, proxy=PROXY)
+    worker = Worker(window_id=101, path=PATH, proxy=os.environ.get('PROXY'))
 
     some_list: List[str] = []
+    some_errors: List[str] = []
 
     def my_handler_1(data: str) -> None:
         some_list.append(data)
+        print(f'Received data: {data}')
+
+    def error_handler_1(data: str) -> None:
+        some_errors.append(data)
         print(f'Received data: {data}')
 
     contents = SublimeInputContent(
@@ -150,7 +145,7 @@ def test_python_worker_sse_run():
 
     settings = AssistantSettings(dicttt)
 
-    worker.run_sync(1, PromptMode.View, [contents], settings, my_handler_1)
+    worker.run_sync(1, PromptMode.View, [contents], settings, my_handler_1, error_handler_1)
 
     time.sleep(2)
 
@@ -158,12 +153,17 @@ def test_python_worker_sse_run():
 
 
 def test_python_worker_sse_function_run():
-    worker = Worker(window_id=101, path=PATH, proxy=PROXY)
+    worker = Worker(window_id=101, path=PATH, proxy=os.environ.get('PROXY'))
 
     some_list: List[str] = []
+    some_errors: List[str] = []
 
     def my_handler_1(data: str) -> None:
         some_list.append(data)
+        print(f'Received data: {data}')
+
+    def error_handler_1(data: str) -> None:
+        some_errors.append(data)
         print(f'Received data: {data}')
 
     contents = SublimeInputContent(
@@ -185,7 +185,7 @@ def test_python_worker_sse_function_run():
 
     settings = AssistantSettings(dicttt)
 
-    worker.run(1, PromptMode.View, [contents], settings, my_handler_1)
+    worker.run(1, PromptMode.View, [contents], settings, my_handler_1, error_handler_1)
 
     time.sleep(2)
 
@@ -194,16 +194,21 @@ def test_python_worker_sse_function_run():
 
 @pytest.mark.asyncio
 async def test_python_worker_sse_function_run_cancel():
-    worker = Worker(window_id=101, path=PATH, proxy=PROXY)
+    worker = Worker(window_id=101, path=PATH, proxy=os.environ.get('PROXY'))
 
     contents = SublimeInputContent(
         InputKind.ViewSelection, 'This is the test request, provide me 30 words response'
     )
 
     some_list: List[str] = []
+    some_errors: List[str] = []
 
     def my_handler_1(data: str) -> None:
         some_list.append(data)
+        print(f'Received data: {data}')
+
+    def error_handler_1(data: str) -> None:
+        some_errors.append(data)
         print(f'Received data: {data}')
 
     dicttt = {
@@ -222,7 +227,7 @@ async def test_python_worker_sse_function_run_cancel():
     settings = AssistantSettings(dicttt)
 
     async def run_worker_sync():
-        worker.run(1, PromptMode.View, [contents], settings, my_handler_1)
+        worker.run(1, PromptMode.View, [contents], settings, my_handler_1, error_handler_1)
 
     task = asyncio.create_task(run_worker_sync())
 

@@ -102,7 +102,10 @@ impl LlmRunner {
                 assistant_settings,
                 sender,
                 cancel_flag,
-                true, // storing function calls chain disregarding user settings
+                false, // TODO: Should think how to make func calls history persistant
+                       // Currently it duplicates responses if set this toggle to true
+                       // i.e. to save response on disc.
+                       // FWIW it works correct now, but irrational
             ))
             .await
         } else if store {

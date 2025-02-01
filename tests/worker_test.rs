@@ -17,6 +17,7 @@ use tempfile::TempDir;
 use tokio::{test, time::timeout};
 use wiremock::{
     matchers::{method, path},
+    Mock,
     MockServer,
     ResponseTemplate,
 };
@@ -83,6 +84,7 @@ async fn test_run_chact_method_with_mock_server() {
             prompt_mode,
             assistant_settings,
             Arc::new(|_| {}),
+            Arc::new(|_| {}),
         )
         .await;
 
@@ -142,6 +144,7 @@ async fn test_run_tool_method_with_mock_server() {
             prompt_mode,
             assistant_settings,
             Arc::new(|_| {}),
+            Arc::new(|_| {}),
         )
         .await;
 
@@ -151,6 +154,172 @@ async fn test_run_tool_method_with_mock_server() {
         result
     );
     assert!(fs::remove_dir_all(tmp_dir).is_ok())
+}
+
+#[tokio::test]
+async fn test_error_handler_called_on_http_failure() {
+    // Setup temporary cache folder.
+    let tmp_dir = TempDir::new()
+        .unwrap()
+        .into_path()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let worker = OpenAIWorker::new(1, tmp_dir.clone(), None);
+
+    // Start a mock server that returns a 500 error.
+    let mock_server = MockServer::start().await;
+    let endpoint = "/openai/endpoint";
+    let _mock = Mock::given(method("POST"))
+        .and(path(endpoint))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&mock_server)
+        .await;
+
+    let mut assistant_settings = AssistantSettings::default();
+    assistant_settings.url = format!("{}{}", mock_server.uri(), endpoint);
+    assistant_settings.token = Some("dummy-token".to_string());
+    assistant_settings.chat_model = "some_model".to_string();
+    assistant_settings.stream = false;
+
+    // Create an error accumulator.
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+    let errors_clone = errors.clone();
+    let error_handler = Arc::new(move |msg: String| {
+        let mut guard = errors_clone.lock().unwrap();
+        guard.push(msg);
+    });
+
+    // A normal handler that does nothing.
+    let normal_handler = Arc::new(|_s: String| {});
+
+    let contents = vec![SublimeInputContent {
+        content: Some("trigger error".to_string()),
+        path: Some("dummy".to_string()),
+        scope: Some("dummy".to_string()),
+        input_kind: InputKind::ViewSelection,
+        tool_id: None,
+    }];
+
+    let result = worker
+        .run(
+            1,
+            contents,
+            PromptMode::View,
+            assistant_settings,
+            normal_handler,
+            error_handler,
+        )
+        .await;
+
+    // Expect an error result due to the 500 response.
+    assert!(
+        result.is_err(),
+        "Expected error result due to failing endpoint"
+    );
+
+    let errs = dbg!(errors)
+        .lock()
+        .unwrap()
+        .clone();
+    assert!(
+        !errs.is_empty(),
+        "Expected error_handler to be called when LlmRunner fails"
+    );
+    assert!(
+        errs.iter()
+            .any(|msg| msg.contains("LlmRunner error")),
+        "Expected error message to contain 'LlmRunner error'"
+    );
+
+    let _ = fs::remove_dir_all(tmp_dir);
+}
+
+#[tokio::test]
+async fn test_error_handler_not_called_on_success() {
+    // Setup temporary cache folder.
+    let tmp_dir = TempDir::new()
+        .unwrap()
+        .into_path()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let worker = OpenAIWorker::new(1, tmp_dir.clone(), None);
+
+    // Start a mock server that returns a successful response.
+    let mock_server = MockServer::start().await;
+    let endpoint = "/openai/endpoint";
+    let _mock = Mock::given(method("POST"))
+        .and(path(endpoint))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({
+                "model": "some_model",
+                "id": "some_id",
+                "created": 367123,
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "Success content",
+                        "refusal": null
+                    },
+                    "logprobs": null,
+                    "finish_reason": "stop"
+                }]
+            })),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let mut assistant_settings = AssistantSettings::default();
+    assistant_settings.url = format!("{}{}", mock_server.uri(), endpoint);
+    assistant_settings.token = Some("dummy-token".to_string());
+    assistant_settings.chat_model = "some_model".to_string();
+    assistant_settings.stream = false;
+
+    // Create an error accumulator.
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+    let errors_clone = errors.clone();
+    let error_handler = Arc::new(move |msg: String| {
+        let mut guard = errors_clone.lock().unwrap();
+        guard.push(msg);
+    });
+
+    // A normal handler that does nothing.
+    let normal_handler = Arc::new(|_s: String| {});
+
+    let contents = vec![SublimeInputContent {
+        content: Some("test success".to_string()),
+        path: Some("dummy".to_string()),
+        scope: Some("dummy".to_string()),
+        input_kind: InputKind::ViewSelection,
+        tool_id: None,
+    }];
+
+    let result = worker
+        .run(
+            1,
+            contents,
+            PromptMode::View,
+            assistant_settings,
+            normal_handler,
+            error_handler,
+        )
+        .await;
+
+    // Expect a successful result.
+    assert!(
+        result.is_ok(),
+        "Expected Ok result for successful endpoint"
+    );
+
+    let errs = errors.lock().unwrap().clone();
+    assert!(
+        errs.is_empty(),
+        "Expected error_handler to not be called when LlmRunner succeeds"
+    );
+
+    let _ = fs::remove_dir_all(tmp_dir);
 }
 
 #[tokio::test]
@@ -217,6 +386,7 @@ async fn test_run_method_see_with_mock_server() {
             prompt_mode,
             assistant_settings,
             Arc::new(|_| {}),
+            Arc::new(|_| {}),
         )
         .await;
 
@@ -266,6 +436,7 @@ async fn test_remote_server_completion() {
             vec![contents],
             prompt_mode,
             assistant_settings,
+            Arc::new(|_| {}),
             Arc::new(|_| {}),
         )
         .await;
@@ -322,6 +493,7 @@ async fn test_remote_server_complerion_cancelled() {
             let mut output_guard = output_clone.lock().unwrap();
             output_guard.push(s);
         }),
+        Arc::new(|_| {}),
     );
 
     worker.cancel();
@@ -380,6 +552,7 @@ async fn test_remote_server_fucntion_call() {
             prompt_mode,
             assistant_settings,
             Arc::new(|_| {}),
+            Arc::new(|_| {}),
         )
         .await;
 
@@ -390,6 +563,9 @@ async fn test_remote_server_fucntion_call() {
     );
 }
 
+// TODO: Due to the dullness of llama when it comes to function call, this test fails due to inifinite loop
+// of function calls that llama falls into. This is actually not a bug but a feature.
+// I have to implement some threshold on a number of a consequent fn calls to avoid such loops to be too long.
 #[test]
 #[ignore = "It's paid, so should be skipped by default"]
 async fn test_remote_server_third_party_fucntion_call() {
@@ -436,6 +612,7 @@ async fn test_remote_server_third_party_fucntion_call() {
                 vec![contents],
                 prompt_mode,
                 assistant_settings,
+                Arc::new(|_| {}),
                 Arc::new(|_| {}),
             )
             .await
@@ -493,6 +670,7 @@ async fn test_remote_server_third_party_completion() {
             prompt_mode,
             assistant_settings,
             Arc::new(|_| {}),
+            Arc::new(|_| {}),
         )
         .await;
 
@@ -544,6 +722,7 @@ async fn test_remote_server_third_party_consequent_completion() {
                 prompt_mode.clone(),
                 assistant_settings.clone(),
                 Arc::new(|_| {}),
+                Arc::new(|_| {}),
             )
             .await;
     }
@@ -557,6 +736,7 @@ async fn test_remote_server_third_party_consequent_completion() {
                 vec![contents],
                 prompt_mode,
                 assistant_settings,
+                Arc::new(|_| {}),
                 Arc::new(|_| {}),
             )
             .await;

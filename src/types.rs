@@ -44,10 +44,6 @@ pub(crate) struct CacheEntry {
 
 impl From<SublimeInputContent> for CacheEntry {
     fn from(content: SublimeInputContent) -> Self {
-        // FIXME: Content should be parsed to extract thinking part
-        // content should be set without thinking part.
-        let thinking = content.content.clone();
-
         let role = match content.input_kind {
             InputKind::AssistantResponse => Roles::Assistant,
             _ => {
@@ -61,7 +57,7 @@ impl From<SublimeInputContent> for CacheEntry {
 
         CacheEntry {
             content: content.content,
-            thinking,
+            thinking: None,
             path: content.path,
             scope: content.scope,
             role,
@@ -132,6 +128,15 @@ pub enum InputKind {
     Sheet,
     FunctionResult,
     AssistantResponse,
+}
+
+#[pyclass(eq, eq_int)]
+#[derive(EnumString, Display, Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasonEffort {
+    Low,
+    Medium,
+    High,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -239,19 +244,19 @@ pub struct AssistantSettings {
 
     #[pyo3(get)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub reasoning_effort: Option<String>,
+    pub reasoning_effort: Option<ReasonEffort>,
 
     #[pyo3(get)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub top_p: Option<usize>,
+    pub top_p: Option<f64>,
 
     #[pyo3(get)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub frequency_penalty: Option<usize>,
+    pub frequency_penalty: Option<f64>,
 
     #[pyo3(get)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub presence_penalty: Option<usize>,
+    pub presence_penalty: Option<f64>,
 
     #[pyo3(get)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -299,8 +304,17 @@ impl AssistantSettings {
             default.name = value.clone();
         }
 
-        if let Some(RustyEnum::String(value)) = dict.get("output_mode") {
-            default.output_mode = PromptMode::from_str(value).unwrap_or(PromptMode::Phantom);
+        if let Some(RustyEnum::String(value)) = dict
+            .get("output_mode")
+            .or(dict.get("prompt_mode"))
+        {
+            let tmp;
+            if value == "panel" {
+                tmp = "view";
+            } else {
+                tmp = value;
+            }
+            default.output_mode = PromptMode::from_str(tmp).unwrap_or(PromptMode::Phantom);
         }
 
         if let Some(RustyEnum::String(value)) = dict.get("token") {
@@ -319,7 +333,7 @@ impl AssistantSettings {
         }
 
         if let Some(RustyEnum::String(value)) = dict.get("reasoning_effort") {
-            default.reasoning_effort = Some(value.clone());
+            default.reasoning_effort = ReasonEffort::from_str(value).ok();
         }
 
         if let Some(RustyEnum::Float(value)) = dict.get("temperature") {
@@ -327,22 +341,27 @@ impl AssistantSettings {
         }
 
         if let Some(RustyEnum::Int(value)) = dict.get("max_tokens") {
-            default.max_tokens = Some(*value);
+            if dict
+                .get("max_completion_tokens")
+                .is_none()
+            {
+                default.max_tokens = Some(*value);
+            }
         }
 
         if let Some(RustyEnum::Int(value)) = dict.get("max_completion_tokens") {
-            default.max_completion_tokens = Some(*value); // TODO: This should be self exclusive with max_tokens
+            default.max_completion_tokens = Some(*value);
         }
 
-        if let Some(RustyEnum::Int(value)) = dict.get("top_p") {
+        if let Some(RustyEnum::Float(value)) = dict.get("top_p") {
             default.top_p = Some(*value);
         }
 
-        if let Some(RustyEnum::Int(value)) = dict.get("frequency_penalty") {
+        if let Some(RustyEnum::Float(value)) = dict.get("frequency_penalty") {
             default.frequency_penalty = Some(*value);
         }
 
-        if let Some(RustyEnum::Int(value)) = dict.get("presence_penalty") {
+        if let Some(RustyEnum::Float(value)) = dict.get("presence_penalty") {
             default.presence_penalty = Some(*value);
         }
 

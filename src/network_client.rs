@@ -24,7 +24,6 @@ use tokio::{
 };
 
 use crate::{
-    logger,
     openai_network_types::OpenAICompletionRequest,
     types::{AssistantSettings, CacheEntry, SublimeInputContent},
 };
@@ -115,6 +114,9 @@ impl NetworkClient {
 
         let composable_response = Arc::new(Mutex::new(serde_json::json!({})));
 
+        #[cfg(debug_assertions)]
+        use crate::logger;
+        #[cfg(debug_assertions)]
         let _ = logger::setup_logger("/tmp/rsvr_log.log");
 
         if stream {

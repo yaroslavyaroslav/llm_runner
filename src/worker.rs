@@ -57,6 +57,7 @@ impl OpenAIWorker {
         prompt_mode: PromptMode,
         assistant_settings: AssistantSettings,
         handler: Arc<dyn Fn(String) + Send + Sync + 'static>,
+        error_handler: Arc<dyn Fn(String) + Send + Sync + 'static>,
     ) -> Result<()> {
         self.is_alive
             .store(true, Ordering::SeqCst);
@@ -85,12 +86,16 @@ impl OpenAIWorker {
 
         let handler_fut = StreamHandler::handle_stream_with(rx, handler);
 
-        let (handler, _) = join!(result_fut, handler_fut);
+        let (runner_result, _) = join!(result_fut, handler_fut);
+
+        if let Err(e) = &runner_result {
+            error_handler(format!("LlmRunner error: {}", e));
+        }
 
         self.is_alive
             .store(false, Ordering::SeqCst);
 
-        handler
+        runner_result
     }
 
     pub fn cancel(&self) {

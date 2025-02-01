@@ -139,15 +139,9 @@ impl OpenAICompletionRequest {
             max_tokens: settings.max_tokens,
             max_completion_tokens: settings.max_completion_tokens,
             reasoning_effort: settings.reasoning_effort,
-            top_p: settings
-                .top_p
-                .map(|t| t as f64),
-            frequency_penalty: settings
-                .frequency_penalty
-                .map(|f| f as f64),
-            presence_penalty: settings
-                .presence_penalty
-                .map(|p| p as f64),
+            top_p: settings.top_p,
+            frequency_penalty: settings.frequency_penalty,
+            presence_penalty: settings.presence_penalty,
             tools: if settings
                 .tools
                 .unwrap_or(false)

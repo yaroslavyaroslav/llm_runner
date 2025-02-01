@@ -104,7 +104,7 @@ impl CacheEntry {
                     .map(|m| m.as_str().to_string());
                 if let Some(thinking) = &thinking_part {
                     *content = content
-                        .replace(&format!("{}", thinking), "") // keep tags in place
+                        .replace(&thinking.to_string(), "") // keep tags in place
                         // .trim()
                         .to_string();
                 }
@@ -308,13 +308,8 @@ impl AssistantSettings {
             .get("output_mode")
             .or(dict.get("prompt_mode"))
         {
-            let tmp;
-            if value == "panel" {
-                tmp = "view";
-            } else {
-                tmp = value;
-            }
-            default.output_mode = PromptMode::from_str(tmp).unwrap_or(PromptMode::Phantom);
+            let deprecated_value = if value == "panel" { "view" } else { value };
+            default.output_mode = PromptMode::from_str(deprecated_value).unwrap_or(PromptMode::Phantom);
         }
 
         if let Some(RustyEnum::String(value)) = dict.get("token") {
@@ -341,10 +336,7 @@ impl AssistantSettings {
         }
 
         if let Some(RustyEnum::Int(value)) = dict.get("max_tokens") {
-            if dict
-                .get("max_completion_tokens")
-                .is_none()
-            {
+            if !dict.contains_key("max_completion_tokens") {
                 default.max_tokens = Some(*value);
             }
         }

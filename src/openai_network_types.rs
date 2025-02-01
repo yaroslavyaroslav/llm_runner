@@ -6,7 +6,7 @@ use strum_macros::{Display, EnumString};
 
 use crate::{
     tools_definition::FUNCTIONS,
-    types::{ApiType, AssistantSettings, CacheEntry, SublimeInputContent},
+    types::{ApiType, AssistantSettings, CacheEntry, ReasonEffort, SublimeInputContent},
 };
 
 #[derive(Debug)]
@@ -57,7 +57,7 @@ pub struct OpenAICompletionRequest {
     pub(crate) presence_penalty: Option<f64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) reasoning_effort: Option<String>,
+    pub(crate) reasoning_effort: Option<ReasonEffort>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) parallel_tool_calls: Option<bool>,

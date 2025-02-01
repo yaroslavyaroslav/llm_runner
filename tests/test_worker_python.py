@@ -35,10 +35,10 @@ def test_assistant_settings():
         'temperature': 0.7,
         'max_tokens': 1024,
         'max_completion_tokens': 2048,
-        'top_p': 1,
-        'frequency_penalty': 2,
+        'top_p': 1.0,
+        'frequency_penalty': 2.0,
         'stream': True,
-        'presence_penalty': 3,
+        'presence_penalty': 3.0,
         'advertisement': True,
     }
 
@@ -50,7 +50,7 @@ def test_assistant_settings():
     assert settings.url == 'https://models.inference.ai.azure.com/path/to'
     assert settings.token == 'some_token'
     assert settings.temperature == 0.7
-    assert settings.max_tokens == 1024
+    assert settings.max_tokens is None  # due to max_completion_tokens presence
     assert settings.max_completion_tokens == 2048
     assert settings.top_p == 1
     assert settings.frequency_penalty == 2

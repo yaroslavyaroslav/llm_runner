@@ -61,7 +61,7 @@ impl From<SublimeInputContent> for CacheEntry {
 
         CacheEntry {
             content: content.content,
-            thinking,
+            thinking: None,
             path: content.path,
             scope: content.scope,
             role,

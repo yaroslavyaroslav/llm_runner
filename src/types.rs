@@ -213,7 +213,7 @@ pub struct AssistantSettings {
     #[pyo3(get)]
     pub name: String,
 
-    #[pyo3(get)]
+    #[pyo3(get, set)]
     pub output_mode: PromptMode,
 
     #[pyo3(get, set)]

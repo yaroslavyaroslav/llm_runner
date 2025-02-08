@@ -12,6 +12,7 @@ use tokio::{
 use crate::{
     cacher::Cacher,
     network_client::NetworkClient,
+    openai_network_types::Function,
     runner::LlmRunner,
     stream_handler::StreamHandler,
     types::{AssistantSettings, PromptMode, SublimeInputContent},
@@ -58,13 +59,11 @@ impl OpenAIWorker {
         assistant_settings: AssistantSettings,
         handler: Arc<dyn Fn(String) + Send + Sync + 'static>,
         error_handler: Arc<dyn Fn(String) + Send + Sync + 'static>,
+        function_handler: Arc<dyn Fn((String, String)) -> String + Send + Sync + 'static>,
     ) -> Result<()> {
         self.is_alive
             .store(true, Ordering::SeqCst);
 
-        // self.view_id = Some(view_id);
-        // self.prompt_mode = Some(prompt_mode.clone());
-        // self.assistant_settings = Some(assistant_settings.clone());
         let provider = NetworkClient::new(self.proxy.clone());
 
         let (tx, rx) = mpsc::channel(view_id);
@@ -80,6 +79,7 @@ impl OpenAIWorker {
             contents,
             assistant_settings,
             Arc::new(Mutex::new(tx)),
+            Arc::clone(&function_handler),
             Arc::clone(&self.cancel_signal),
             store,
         );

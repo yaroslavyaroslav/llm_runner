@@ -24,11 +24,11 @@ pub struct PythonWorker {
     worker: Arc<OpenAIWorker>,
 }
 
-struct Function {
+struct TextHandler {
     func: Arc<dyn Fn(String) + Send + Sync + 'static>,
 }
 
-impl Function {
+impl TextHandler {
     fn new(obj: PyObject) -> Self {
         let func = Arc::new(move |s: String| {
             Python::with_gil(|py| {
@@ -36,7 +36,26 @@ impl Function {
             });
         });
 
-        Function { func }
+        TextHandler { func }
+    }
+}
+
+struct FunctionHandler {
+    func: Arc<dyn Fn((String, String)) -> String + Send + Sync + 'static>,
+}
+
+impl FunctionHandler {
+    fn new(obj: PyObject) -> Self {
+        let func = Arc::new(
+            move |args: (String, String)| -> String {
+                Python::with_gil(|py| {
+                    obj.call1(py, args)
+                        .and_then(|ret| ret.extract::<String>(py))
+                        .expect("Python function call or extraction failed")
+                })
+            },
+        );
+        Self { func }
     }
 }
 
@@ -54,7 +73,7 @@ impl PythonWorker {
         }
     }
 
-    #[pyo3(signature = (view_id, prompt_mode, contents, assistant_settings, handler, error_handler))]
+    #[pyo3(signature = (view_id, prompt_mode, contents, assistant_settings, handler, error_handler, function_handler))]
     fn run(
         &mut self,
         view_id: usize,
@@ -63,6 +82,7 @@ impl PythonWorker {
         assistant_settings: AssistantSettings,
         handler: PyObject,
         error_handler: PyObject,
+        function_handler: PyObject,
     ) -> PyResult<()> {
         let rt = Runtime::new().expect("Failed to create runtime");
         let worker_clone = self.worker.clone();
@@ -74,8 +94,9 @@ impl PythonWorker {
                         contents,
                         prompt_mode,
                         assistant_settings,
-                        Function::new(handler).func,
-                        Function::new(error_handler).func,
+                        TextHandler::new(handler).func,
+                        TextHandler::new(error_handler).func,
+                        FunctionHandler::new(function_handler).func,
                     )
                     .await
             })
@@ -100,6 +121,7 @@ impl PythonWorker {
         assistant_settings: AssistantSettings,
         handler: PyObject,
         error_handler: PyObject,
+        function_handler: PyObject,
     ) -> PyResult<()> {
         let rt = Runtime::new().expect("Failed to create runtime");
         let worker_clone = self.worker.clone();
@@ -110,8 +132,9 @@ impl PythonWorker {
                     contents,
                     prompt_mode,
                     assistant_settings,
-                    Function::new(handler).func,
-                    Function::new(error_handler).func,
+                    TextHandler::new(handler).func,
+                    TextHandler::new(error_handler).func,
+                    FunctionHandler::new(function_handler).func,
                 )
                 .await
         });

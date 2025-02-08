@@ -18,7 +18,7 @@ pub enum FunctionName {
 
 pub static FUNCTIONS: Lazy<Vec<Arc<Tool>>> = Lazy::new(|| {
     vec![
-        Arc::new((*CREATE_FILE).clone()),
+        // Arc::new((*CREATE_FILE).clone()),
         Arc::new((*REPLACE_TEXT_FOR_WHOLE_FILE).clone()),
         Arc::new((*REPLACE_TEXT_WITH_ANOTHER_TEXT).clone()),
         Arc::new((*READ_REGION_CONTENT).clone()),
@@ -26,6 +26,7 @@ pub static FUNCTIONS: Lazy<Vec<Arc<Tool>>> = Lazy::new(|| {
     ]
 });
 
+#[allow(dead_code)]
 pub static CREATE_FILE: Lazy<Tool> = Lazy::new(|| {
     Tool {
         r#type: "function".to_string(),

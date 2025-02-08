@@ -9,7 +9,7 @@ use tokio::sync::{mpsc::Sender, Mutex};
 use crate::{
     cacher::Cacher,
     network_client::NetworkClient,
-    openai_network_types::{OpenAIResponse, ToolCall},
+    openai_network_types::{Function, OpenAIResponse, ToolCall},
     tools_definition::FunctionName,
     types::{AssistantSettings, CacheEntry, InputKind, SublimeInputContent},
 };
@@ -25,6 +25,7 @@ impl LlmRunner {
         contents: Vec<SublimeInputContent>,
         assistant_settings: AssistantSettings,
         sender: Arc<Mutex<Sender<String>>>,
+        function_handler: Arc<dyn Fn((String, String)) -> String + Send + Sync + 'static>,
         cancel_flag: Arc<AtomicBool>,
         store: bool,
     ) -> Result<()> {
@@ -74,38 +75,43 @@ impl LlmRunner {
                     .clone()
             })
         {
-            if let Ok(message) = result {
+            if let Ok(ref message) = result {
                 cacher
                     .lock()
                     .await
                     .write_entry(&CacheEntry::from(
-                        message.choices[0]
+                        message.clone().choices[0]
                             .message
                             .clone(),
                     ))
                     .ok();
             }
-            let content = LlmRunner::handle_function_call(tool_calls[0].clone());
 
-            for item in content.clone() {
-                cacher
-                    .lock()
-                    .await
-                    .write_entry(&CacheEntry::from(item))
-                    .ok();
-            }
+            let content = LlmRunner::handle_function_call(
+                tool_calls[0].clone(),
+                Arc::clone(&function_handler),
+            );
+
+            // for item in content.clone() {
+            //     cacher
+            //         .lock()
+            //         .await
+            //         .write_entry(&CacheEntry::from(item))
+            //         .ok();
+            // }
 
             Box::pin(Self::execute(
                 provider,
-                cacher,
+                Arc::clone(&cacher),
                 content,
                 assistant_settings,
                 sender,
+                function_handler,
                 cancel_flag,
-                false, // TODO: Should think how to make func calls history persistant
-                       // Currently it duplicates responses if set this toggle to true
-                       // i.e. to save response on disc.
-                       // FWIW it works correct now, but irrational
+                true, // TODO: Should think how to make func calls history persistant
+                      // Currently it duplicates responses if set this toggle to true
+                      // i.e. to save response on disc.
+                      // FWIW it works correct now, but irrational
             ))
             .await
         } else if store {
@@ -122,28 +128,26 @@ impl LlmRunner {
         }
     }
 
-    fn handle_function_call(tool_call: ToolCall) -> Vec<SublimeInputContent> {
-        vec![LlmRunner::pick_function(tool_call)]
+    fn handle_function_call(
+        tool_call: ToolCall,
+        function_handler: Arc<dyn Fn((String, String)) -> String + Send + Sync + 'static>,
+    ) -> Vec<SublimeInputContent> {
+        vec![LlmRunner::pick_function(
+            tool_call,
+            Arc::clone(&function_handler),
+        )]
     }
 
-    fn pick_function(tool: ToolCall) -> SublimeInputContent {
-        let content = match FunctionName::from_str(tool.function.name.as_str()) {
-            Ok(FunctionName::CreateFile) => Some("File created".to_string()),
-            Ok(FunctionName::ReadRegionContent) => {
-                Some("This is test content that have been read".to_string())
-            }
-            Ok(FunctionName::GetWorkingDirectoryContent) => {
-                Some("This will be the working directory content provided".to_string())
-            }
-            Ok(FunctionName::ReplaceTextWithAnotherText) => Some("Text successfully replaced".to_string()),
-            Ok(FunctionName::ReplaceTextForWholeFile) => {
-                Some("The whole file content successfully replaced".to_string())
-            }
-            Err(_) => Some("Function unknown".to_string()),
-        };
+    fn pick_function(
+        tool: ToolCall,
+        function_handler: Arc<dyn Fn((String, String)) -> String + Send + Sync + 'static>,
+    ) -> SublimeInputContent {
+        let name = tool.function.name.clone();
+        let args = tool.function.arguments;
+        let response = function_handler((name, args));
 
         SublimeInputContent {
-            content,
+            content: Some(response),
             input_kind: InputKind::FunctionResult,
             tool_id: Some(tool.id),
             path: None,

@@ -16,6 +16,10 @@ from llm_runner import (
 PATH = '/tmp/'
 
 
+def function_handeler(name: str, args: str) -> str:
+    return 'Success'
+
+
 def test_python_worker_initialization():
     worker = Worker(window_id=100, path=PATH)
 
@@ -107,7 +111,7 @@ def test_python_worker_plain_run():
 
     settings = AssistantSettings(dicttt)
 
-    worker.run(1, PromptMode.View, [contents], settings, my_handler_1, error_handler_1)
+    worker.run(1, PromptMode.View, [contents], settings, my_handler_1, error_handler_1, function_handeler)
 
     time.sleep(2)
 
@@ -145,7 +149,15 @@ def test_python_worker_sse_run():
 
     settings = AssistantSettings(dicttt)
 
-    worker.run_sync(1, PromptMode.View, [contents], settings, my_handler_1, error_handler_1)
+    worker.run_sync(
+        1,
+        PromptMode.View,
+        [contents],
+        settings,
+        my_handler_1,
+        error_handler_1,
+        function_handeler,
+    )
 
     time.sleep(2)
 
@@ -167,14 +179,14 @@ def test_python_worker_sse_function_run():
         print(f'Received data: {data}')
 
     contents = SublimeInputContent(
-        InputKind.ViewSelection, 'This is the test request, call the functions available'
+        InputKind.ViewSelection, 'This is the test request, call the create_file function'
     )
 
     dicttt = {
         'name': 'TEST',
         'output_mode': 'phantom',
         'chat_model': 'gpt-4o-mini',
-        'assistant_role': "You're echo bot. You'r just responsing with what you've been asked for",
+        'assistant_role': "You're the function runner bot. You call a function and then prompt response to the user",
         'url': 'https://api.openai.com/v1/chat/completions',
         'token': os.getenv('OPENAI_API_TOKEN'),
         'tools': True,
@@ -185,7 +197,7 @@ def test_python_worker_sse_function_run():
 
     settings = AssistantSettings(dicttt)
 
-    worker.run(1, PromptMode.View, [contents], settings, my_handler_1, error_handler_1)
+    worker.run(1, PromptMode.View, [contents], settings, my_handler_1, error_handler_1, function_handeler)
 
     time.sleep(2)
 
@@ -227,7 +239,7 @@ async def test_python_worker_sse_function_run_cancel():
     settings = AssistantSettings(dicttt)
 
     async def run_worker_sync():
-        worker.run(1, PromptMode.View, [contents], settings, my_handler_1, error_handler_1)
+        worker.run(1, PromptMode.View, [contents], settings, my_handler_1, error_handler_1, function_handeler)
 
     task = asyncio.create_task(run_worker_sync())
 

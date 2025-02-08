@@ -7,7 +7,6 @@ mod logger;
 mod py_worker;
 mod runner;
 pub mod stream_handler;
-mod sublime_python;
 mod tools_definition;
 pub mod worker;
 

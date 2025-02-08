@@ -73,6 +73,7 @@ impl PythonWorker {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (view_id, prompt_mode, contents, assistant_settings, handler, error_handler, function_handler))]
     fn run(
         &mut self,
@@ -113,6 +114,7 @@ impl PythonWorker {
             .load(Ordering::Relaxed)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn run_sync(
         &mut self,
         view_id: usize,

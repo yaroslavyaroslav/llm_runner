@@ -267,6 +267,9 @@ pub struct AssistantSettings {
     pub parallel_tool_calls: Option<bool>,
 
     #[pyo3(get)]
+    pub timeout: usize,
+
+    #[pyo3(get)]
     pub stream: bool,
 
     #[pyo3(get)]
@@ -345,6 +348,10 @@ impl AssistantSettings {
             default.max_completion_tokens = Some(*value);
         }
 
+        if let Some(RustyEnum::Int(value)) = dict.get("timeout") {
+            default.timeout = *value;
+        }
+
         if let Some(RustyEnum::Float(value)) = dict.get("top_p") {
             default.top_p = Some(*value);
         }
@@ -398,6 +405,7 @@ impl Default for AssistantSettings {
             frequency_penalty: None,
             presence_penalty: None,
             tools: None,
+            timeout: 10,
             parallel_tool_calls: None,
             stream: true,
             advertisement: true,

@@ -32,10 +32,11 @@ use crate::{
 pub struct NetworkClient {
     client: Client,
     headers: HeaderMap,
+    timeout: usize,
 }
 
 impl NetworkClient {
-    pub(crate) fn new(proxy: Option<String>) -> Self {
+    pub(crate) fn new(proxy: Option<String>, timeout: usize) -> Self {
         let mut headers = HeaderMap::new();
         headers.insert(
             CONTENT_TYPE,
@@ -56,7 +57,11 @@ impl NetworkClient {
             })
             .unwrap_or_default();
 
-        Self { client, headers }
+        Self {
+            client,
+            headers,
+            timeout,
+        }
     }
 
     pub(crate) fn prepare_payload(
@@ -127,7 +132,12 @@ impl NetworkClient {
                 let mut buffer = String::new();
 
                 loop {
-                    match timeout(Duration::from_secs(10), stream.next()).await {
+                    match timeout(
+                        Duration::from_secs(self.timeout as u64),
+                        stream.next(),
+                    )
+                    .await
+                    {
                         Ok(Some(Ok(event))) => {
                             // ...
                             let composable = Arc::clone(&composable_response);
@@ -488,7 +498,7 @@ mod tests {
 
     #[test]
     async fn test_prepare_payload() {
-        let client = NetworkClient::new(None);
+        let client = NetworkClient::new(None, 10);
         let mut settings = AssistantSettings::default();
 
         settings.api_type = ApiType::OpenAi;
@@ -528,7 +538,7 @@ mod tests {
 
     #[test]
     async fn test_prepare_request() {
-        let client = NetworkClient::new(None);
+        let client = NetworkClient::new(None, 10);
         let mut settings = AssistantSettings::default();
         settings.api_type = ApiType::OpenAi;
         let url = "https://models.inference.ai.azure.com/some/path".to_string();
@@ -572,7 +582,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = NetworkClient::new(None);
+        let client = NetworkClient::new(None, 10);
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
         settings.stream = false;
@@ -652,7 +662,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = NetworkClient::new(None);
+        let client = NetworkClient::new(None, 10);
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
 
@@ -750,7 +760,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = NetworkClient::new(None);
+        let client = NetworkClient::new(None, 10);
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
 
@@ -853,7 +863,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = NetworkClient::new(None);
+        let client = NetworkClient::new(None, 10);
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
         settings.stream = false;
@@ -957,6 +967,7 @@ mod tests {
             presence_penalty: None,
             tools: None,
             parallel_tool_calls: None,
+            timeout: 10,
             stream: true,
             advertisement: false,
             api_type: ApiType::OpenAi,
@@ -969,7 +980,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(10);
 
         let task = tokio::spawn(async move {
-            let client = NetworkClient::new(None);
+            let client = NetworkClient::new(None, 10);
             let payload = "dummy payload";
             let request = client
                 .prepare_request(settings.clone(), payload.to_string())

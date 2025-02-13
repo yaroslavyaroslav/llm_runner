@@ -64,7 +64,10 @@ impl OpenAIWorker {
         self.is_alive
             .store(true, Ordering::SeqCst);
 
-        let provider = NetworkClient::new(self.proxy.clone());
+        let provider = NetworkClient::new(
+            self.proxy.clone(),
+            assistant_settings.timeout,
+        );
 
         let (tx, rx) = mpsc::channel(view_id);
 

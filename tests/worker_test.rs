@@ -404,6 +404,56 @@ async fn test_run_method_see_with_mock_server() {
 }
 
 #[test]
+#[ignore = "It's llm local server depndant, so should be skipped by default"]
+async fn test_local_server_completion() {
+    let tmp_dir = TempDir::new()
+        .unwrap()
+        .into_path()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let worker = OpenAIWorker::new(
+        1,
+        tmp_dir.clone(),
+        env::var("PROXY").ok(),
+    );
+
+    let mut assistant_settings = AssistantSettings::default();
+    assistant_settings.url = format!("http://127.0.0.1:11434/v1/chat/completions");
+    assistant_settings.chat_model = "tinyllama:latest".to_string();
+    assistant_settings.stream = true;
+
+    let prompt_mode = PromptMode::View;
+
+    let contents = SublimeInputContent {
+        content: Some("This is the test request, provide me 300 words response".to_string()),
+        path: Some("/path/to/file".to_string()),
+        scope: Some("text.plain".to_string()),
+        input_kind: InputKind::ViewSelection,
+        tool_id: None,
+    };
+
+    let result = worker
+        .run(
+            1,
+            vec![contents],
+            prompt_mode,
+            assistant_settings,
+            Arc::new(|_| {}),
+            Arc::new(|_| {}),
+            Arc::new(|_| "".to_string()),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "Expected Ok, got Err: {:?}",
+        result
+    );
+}
+
+#[test]
 #[ignore = "It's paid, so should be skipped by default"]
 async fn test_remote_server_completion() {
     let tmp_dir = TempDir::new()

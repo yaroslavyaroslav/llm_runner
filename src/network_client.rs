@@ -229,7 +229,7 @@ impl NetworkClient {
                     composable_response
                 );
 
-                let result = composable_response
+                let result = dbg!(composable_response)
                     .lock()
                     .await
                     .take();
@@ -366,17 +366,8 @@ impl NetworkClient {
                 Ok(())
             }
             (Value::Array(base_array), Value::Array(addition_array)) => {
-                /*
-                 TODO: It bugs on together stream, the one that sends usage:
-                 ```json
-                 {"id":"909940d8b881e294","object":"chat.completion.chunk",
-                 "created":1738154034,"choices":[],"model":"deepseek-ai/DeepSeek-R1",
-                 "usage":{"prompt_tokens":15634,"total_tokens":16382,"completion_tokens":748}}
-                 ```
-
-                 So this condition is a dummy attempt to fix it.
-                */
-                if !&addition_array.is_empty() {
+                // Previous fallback: if arrays are non-empty, merge the first items.
+                if !addition_array.is_empty() && !base_array.is_empty() {
                     let _ = Self::merge_json(&mut base_array[0], &addition_array[0]);
                 }
                 Ok(())
@@ -388,38 +379,64 @@ impl NetworkClient {
         }
     }
 
-    fn merge_tool_calls(base_array: &mut [Value], addition_array: Vec<Value>) -> Result<()> {
-        for (base_item, addition_item) in base_array
-            .iter_mut()
-            .zip(addition_array)
-        {
-            let _ = Self::merge_tool_call(base_item, &addition_item);
+    fn merge_tool_calls(base_array: &mut Vec<Value>, addition_array: Vec<Value>) -> Result<()> {
+        for addition_item in addition_array {
+            // Check for an "index" field.
+            if let Some(index_value) = addition_item.get("index") {
+                if let Some(index) = index_value.as_u64() {
+                    let idx = index as usize;
+                    // Ensure the base vector is large enough.
+                    if idx >= base_array.len() {
+                        base_array.resize_with(idx + 1, || serde_json::json!({}));
+                    }
+                    // Remove the "index" field so it doesn't persist.
+                    let mut trimmed_addition = addition_item.clone();
+                    if let Value::Object(ref mut obj) = trimmed_addition {
+                        obj.remove("index");
+                    }
+                    let _ = Self::merge_tool_call(&mut base_array[idx], &trimmed_addition);
+                }
+            } else {
+                // If no index is provided, merge with the first element.
+                if !base_array.is_empty() {
+                    let _ = Self::merge_tool_call(&mut base_array[0], &addition_item);
+                }
+            }
         }
         Ok(())
     }
 
     fn merge_tool_call(base_item: &mut Value, addition_item: &Value) -> Result<()> {
-        if let (Some(base_args), Some(addition_args)) = (
-            base_item
-                .get_mut("function")
-                .and_then(|f| f.get_mut("arguments")),
-            addition_item
-                .get("function")
-                .and_then(|f| f.get("arguments")),
+        let base_obj = base_item
+            .as_object_mut()
+            .expect("Expected base_item to be an object");
+
+        // Merge the "arguments" field: append strings if both exist.
+        match (
+            base_obj.get_mut("arguments"),
+            addition_item.get("arguments"),
         ) {
-            if let Some(base_args_str) = base_args.as_str() {
-                if let Some(addition_args_str) = addition_args.as_str() {
-                    *base_args = serde_json::json!(format!(
-                        "{}{}",
-                        base_args_str, addition_args_str
-                    ));
-                } else {
-                    *base_args = addition_args.clone();
+            (Some(Value::String(base_args)), Some(Value::String(add_args))) => {
+                *base_args = format!("{}{}", base_args, add_args);
+            }
+            (_, Some(add_args)) => {
+                base_obj.insert(
+                    "arguments".to_string(),
+                    add_args.clone(),
+                );
+            }
+            _ => {}
+        }
+
+        // For "function", "id", and "type", set them from addition_item if they're not already present.
+        for key in &["function", "id", "type"] {
+            if base_obj.get(*key).is_none() {
+                if let Some(val) = addition_item.get(*key) {
+                    base_obj.insert((*key).to_string(), val.clone());
                 }
-            } else {
-                *base_args = addition_args.clone();
             }
         }
+
         Ok(())
     }
 

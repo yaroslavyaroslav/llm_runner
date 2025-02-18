@@ -410,22 +410,25 @@ impl NetworkClient {
         let base_obj = base_item
             .as_object_mut()
             .expect("Expected base_item to be an object");
+        dbg!(&base_obj);
+        dbg!(addition_item);
 
-        // Merge the "arguments" field: append strings if both exist.
-        match (
-            base_obj.get_mut("arguments"),
-            addition_item.get("arguments"),
-        ) {
-            (Some(Value::String(base_args)), Some(Value::String(add_args))) => {
-                *base_args = format!("{}{}", base_args, add_args);
+        if let Some(new_args) = addition_item
+            .get("function")
+            .and_then(|f| f.get("arguments"))
+            .and_then(Value::as_str)
+        {
+            if let Some(base_function_map) = base_obj
+                .get_mut("function")
+                .and_then(|f| f.as_object_mut())
+            {
+                let entry = base_function_map
+                    .entry("arguments".to_string())
+                    .or_insert(Value::String(String::new()));
+                if let Value::String(existing_args) = entry {
+                    existing_args.push_str(new_args);
+                }
             }
-            (_, Some(add_args)) => {
-                base_obj.insert(
-                    "arguments".to_string(),
-                    add_args.clone(),
-                );
-            }
-            _ => {}
         }
 
         // For "function", "id", and "type", set them from addition_item if they're not already present.

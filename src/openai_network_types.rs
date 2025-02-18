@@ -155,14 +155,7 @@ impl OpenAICompletionRequest {
             } else {
                 None
             },
-            parallel_tool_calls: if settings
-                .tools
-                .unwrap_or(false)
-            {
-                Some(false)
-            } else {
-                None
-            },
+            parallel_tool_calls: settings.parallel_tool_calls,
         }
     }
 }
@@ -205,9 +198,7 @@ impl From<CacheEntry> for OpenAIMessage {
             role: value.role,
             tool_call_id: value.tool_call_id,
             name: None,
-            tool_calls: value
-                .tool_call
-                .map(|t| vec![t]),
+            tool_calls: value.tool_calls,
         }
     }
 }
@@ -263,9 +254,7 @@ impl From<CacheEntry> for OpenAIPlainTextMessage {
             role: value.role,
             tool_call_id: value.tool_call_id,
             name: None,
-            tool_calls: value
-                .tool_call
-                .map(|t| vec![t]),
+            tool_calls: value.tool_calls,
         }
     }
 }

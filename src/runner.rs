@@ -85,7 +85,7 @@ impl LlmRunner {
             }
 
             let content = LlmRunner::handle_function_call(
-                tool_calls[0].clone(),
+                tool_calls,
                 Arc::clone(&function_handler),
             );
 
@@ -115,13 +115,18 @@ impl LlmRunner {
     }
 
     fn handle_function_call(
-        tool_call: ToolCall,
+        tool_calls: Vec<ToolCall>,
         function_handler: Arc<dyn Fn((String, String)) -> String + Send + Sync + 'static>,
     ) -> Vec<SublimeInputContent> {
-        vec![LlmRunner::pick_function(
-            tool_call,
-            Arc::clone(&function_handler),
-        )]
+        tool_calls
+            .iter()
+            .map(|tool_call| {
+                LlmRunner::pick_function(
+                    tool_call.clone(),
+                    Arc::clone(&function_handler),
+                )
+            })
+            .collect::<Vec<_>>()
     }
 
     fn pick_function(

@@ -670,7 +670,7 @@ async fn test_server_remote_fucntion_call_parallel() {
             Arc::new(|_| "Success".to_string()),
         )
         .await;
-    assert!(false);
+
     assert!(
         result.is_ok(),
         "Expected Ok, got Err: {:?}",

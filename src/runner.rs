@@ -1,7 +1,4 @@
-use std::{
-    str::FromStr,
-    sync::{atomic::AtomicBool, Arc},
-};
+use std::sync::{atomic::AtomicBool, Arc};
 
 use anyhow::Result;
 use tokio::sync::{mpsc::Sender, Mutex};
@@ -9,8 +6,7 @@ use tokio::sync::{mpsc::Sender, Mutex};
 use crate::{
     cacher::Cacher,
     network_client::NetworkClient,
-    openai_network_types::{Function, OpenAIResponse, ToolCall},
-    tools_definition::FunctionName,
+    openai_network_types::{OpenAIResponse, ToolCall},
     types::{AssistantSettings, CacheEntry, InputKind, SublimeInputContent},
 };
 
@@ -19,6 +15,7 @@ use crate::{
 pub struct LlmRunner;
 
 impl LlmRunner {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn execute(
         provider: NetworkClient,
         cacher: Arc<Mutex<Cacher>>,
@@ -88,17 +85,9 @@ impl LlmRunner {
             }
 
             let content = LlmRunner::handle_function_call(
-                tool_calls[0].clone(),
+                tool_calls,
                 Arc::clone(&function_handler),
             );
-
-            // for item in content.clone() {
-            //     cacher
-            //         .lock()
-            //         .await
-            //         .write_entry(&CacheEntry::from(item))
-            //         .ok();
-            // }
 
             Box::pin(Self::execute(
                 provider,
@@ -108,10 +97,7 @@ impl LlmRunner {
                 sender,
                 function_handler,
                 cancel_flag,
-                true, // TODO: Should think how to make func calls history persistant
-                      // Currently it duplicates responses if set this toggle to true
-                      // i.e. to save response on disc.
-                      // FWIW it works correct now, but irrational
+                true,
             ))
             .await
         } else if store {
@@ -129,13 +115,18 @@ impl LlmRunner {
     }
 
     fn handle_function_call(
-        tool_call: ToolCall,
+        tool_calls: Vec<ToolCall>,
         function_handler: Arc<dyn Fn((String, String)) -> String + Send + Sync + 'static>,
     ) -> Vec<SublimeInputContent> {
-        vec![LlmRunner::pick_function(
-            tool_call,
-            Arc::clone(&function_handler),
-        )]
+        tool_calls
+            .iter()
+            .map(|tool_call| {
+                LlmRunner::pick_function(
+                    tool_call.clone(),
+                    Arc::clone(&function_handler),
+                )
+            })
+            .collect::<Vec<_>>()
     }
 
     fn pick_function(

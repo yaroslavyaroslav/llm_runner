@@ -35,9 +35,16 @@ pub(crate) struct CacheEntry {
 
     pub(crate) role: Roles,
 
+    /// Tools called by an assistant
+    ///
+    /// Incomming request from llm,
+    /// there can be few of them in a row
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) tool_call: Option<ToolCall>,
+    pub(crate) tool_calls: Option<Vec<ToolCall>>,
 
+    /// Id of a tool_call was callled by llm
+    ///
+    /// Used in response to the model with the result of a tool call initiated by it
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) tool_call_id: Option<String>,
 }
@@ -61,7 +68,7 @@ impl From<SublimeInputContent> for CacheEntry {
             path: content.path,
             scope: content.scope,
             role,
-            tool_call: None,
+            tool_calls: None,
             tool_call_id: content.tool_id,
         }
     }
@@ -69,11 +76,6 @@ impl From<SublimeInputContent> for CacheEntry {
 
 impl From<AssistantMessage> for CacheEntry {
     fn from(content: AssistantMessage) -> Self {
-        let first_tool_call = content
-            .tool_calls
-            .as_ref()
-            .and_then(|calls| calls.first().cloned());
-
         let (t_content, thinking) = if let Some(mut content_str) = content.content {
             let thinking_part = Self::extract_thinking_part(&mut content_str);
 
@@ -88,8 +90,8 @@ impl From<AssistantMessage> for CacheEntry {
             path: None,
             scope: None,
             role: content.role,
-            tool_call: first_tool_call.clone(),
-            tool_call_id: first_tool_call.map(|t| t.id),
+            tool_calls: content.tool_calls,
+            tool_call_id: None,
         }
     }
 }
@@ -105,13 +107,9 @@ impl CacheEntry {
                 if let Some(thinking) = &thinking_part {
                     *content = content
                         .replace(&thinking.to_string(), "") // keep tags in place
-                        // .trim()
                         .to_string();
                 }
-                thinking_part.map(|s| {
-                    s /*.trim()*/
-                        .to_string()
-                })
+                thinking_part.map(|s| s.to_string())
             })
     }
 }
@@ -267,6 +265,9 @@ pub struct AssistantSettings {
     pub parallel_tool_calls: Option<bool>,
 
     #[pyo3(get)]
+    pub timeout: usize,
+
+    #[pyo3(get)]
     pub stream: bool,
 
     #[pyo3(get)]
@@ -345,6 +346,10 @@ impl AssistantSettings {
             default.max_completion_tokens = Some(*value);
         }
 
+        if let Some(RustyEnum::Int(value)) = dict.get("timeout") {
+            default.timeout = *value;
+        }
+
         if let Some(RustyEnum::Float(value)) = dict.get("top_p") {
             default.top_p = Some(*value);
         }
@@ -398,6 +403,7 @@ impl Default for AssistantSettings {
             frequency_penalty: None,
             presence_penalty: None,
             tools: None,
+            timeout: 10,
             parallel_tool_calls: None,
             stream: true,
             advertisement: true,

@@ -32,10 +32,11 @@ use crate::{
 pub struct NetworkClient {
     client: Client,
     headers: HeaderMap,
+    timeout: usize,
 }
 
 impl NetworkClient {
-    pub(crate) fn new(proxy: Option<String>) -> Self {
+    pub(crate) fn new(proxy: Option<String>, timeout: usize) -> Self {
         let mut headers = HeaderMap::new();
         headers.insert(
             CONTENT_TYPE,
@@ -56,7 +57,11 @@ impl NetworkClient {
             })
             .unwrap_or_default();
 
-        Self { client, headers }
+        Self {
+            client,
+            headers,
+            timeout,
+        }
     }
 
     pub(crate) fn prepare_payload(
@@ -127,7 +132,12 @@ impl NetworkClient {
                 let mut buffer = String::new();
 
                 loop {
-                    match timeout(Duration::from_secs(10), stream.next()).await {
+                    match timeout(
+                        Duration::from_secs(self.timeout as u64),
+                        stream.next(),
+                    )
+                    .await
+                    {
                         Ok(Some(Ok(event))) => {
                             // ...
                             let composable = Arc::clone(&composable_response);
@@ -219,7 +229,7 @@ impl NetworkClient {
                     composable_response
                 );
 
-                let result = composable_response
+                let result = dbg!(composable_response)
                     .lock()
                     .await
                     .take();
@@ -356,17 +366,8 @@ impl NetworkClient {
                 Ok(())
             }
             (Value::Array(base_array), Value::Array(addition_array)) => {
-                /*
-                 TODO: It bugs on together stream, the one that sends usage:
-                 ```json
-                 {"id":"909940d8b881e294","object":"chat.completion.chunk",
-                 "created":1738154034,"choices":[],"model":"deepseek-ai/DeepSeek-R1",
-                 "usage":{"prompt_tokens":15634,"total_tokens":16382,"completion_tokens":748}}
-                 ```
-
-                 So this condition is a dummy attempt to fix it.
-                */
-                if !&addition_array.is_empty() {
+                // Previous fallback: if arrays are non-empty, merge the first items.
+                if !addition_array.is_empty() && !base_array.is_empty() {
                     let _ = Self::merge_json(&mut base_array[0], &addition_array[0]);
                 }
                 Ok(())
@@ -378,38 +379,67 @@ impl NetworkClient {
         }
     }
 
-    fn merge_tool_calls(base_array: &mut [Value], addition_array: Vec<Value>) -> Result<()> {
-        for (base_item, addition_item) in base_array
-            .iter_mut()
-            .zip(addition_array)
-        {
-            let _ = Self::merge_tool_call(base_item, &addition_item);
+    fn merge_tool_calls(base_array: &mut Vec<Value>, addition_array: Vec<Value>) -> Result<()> {
+        for addition_item in addition_array {
+            // Check for an "index" field.
+            if let Some(index_value) = addition_item.get("index") {
+                if let Some(index) = index_value.as_u64() {
+                    let idx = index as usize;
+                    // Ensure the base vector is large enough.
+                    if idx >= base_array.len() {
+                        base_array.resize_with(idx + 1, || serde_json::json!({}));
+                    }
+                    // Remove the "index" field so it doesn't persist.
+                    let mut trimmed_addition = addition_item.clone();
+                    if let Value::Object(ref mut obj) = trimmed_addition {
+                        obj.remove("index");
+                    }
+                    let _ = Self::merge_tool_call(&mut base_array[idx], &trimmed_addition);
+                }
+            } else {
+                // If no index is provided, merge with the first element.
+                if !base_array.is_empty() {
+                    let _ = Self::merge_tool_call(&mut base_array[0], &addition_item);
+                }
+            }
         }
         Ok(())
     }
 
     fn merge_tool_call(base_item: &mut Value, addition_item: &Value) -> Result<()> {
-        if let (Some(base_args), Some(addition_args)) = (
-            base_item
+        let base_obj = base_item
+            .as_object_mut()
+            .expect("Expected base_item to be an object");
+        dbg!(&base_obj);
+        dbg!(addition_item);
+
+        if let Some(new_args) = addition_item
+            .get("function")
+            .and_then(|f| f.get("arguments"))
+            .and_then(Value::as_str)
+        {
+            if let Some(base_function_map) = base_obj
                 .get_mut("function")
-                .and_then(|f| f.get_mut("arguments")),
-            addition_item
-                .get("function")
-                .and_then(|f| f.get("arguments")),
-        ) {
-            if let Some(base_args_str) = base_args.as_str() {
-                if let Some(addition_args_str) = addition_args.as_str() {
-                    *base_args = serde_json::json!(format!(
-                        "{}{}",
-                        base_args_str, addition_args_str
-                    ));
-                } else {
-                    *base_args = addition_args.clone();
+                .and_then(|f| f.as_object_mut())
+            {
+                let entry = base_function_map
+                    .entry("arguments".to_string())
+                    .or_insert(Value::String(String::new()));
+                if let Value::String(existing_args) = entry {
+                    existing_args.push_str(new_args);
                 }
-            } else {
-                *base_args = addition_args.clone();
             }
         }
+
+        // For "function", "id", and "type", set them from addition_item if they're not already present.
+        for key in &["function", "id", "type"] {
+            if base_obj.get(*key).is_none() {
+                if let Some(val) = addition_item.get(*key) {
+                    base_obj.insert((*key).to_string(), val.clone());
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -488,7 +518,7 @@ mod tests {
 
     #[test]
     async fn test_prepare_payload() {
-        let client = NetworkClient::new(None);
+        let client = NetworkClient::new(None, 10);
         let mut settings = AssistantSettings::default();
 
         settings.api_type = ApiType::OpenAi;
@@ -528,7 +558,7 @@ mod tests {
 
     #[test]
     async fn test_prepare_request() {
-        let client = NetworkClient::new(None);
+        let client = NetworkClient::new(None, 10);
         let mut settings = AssistantSettings::default();
         settings.api_type = ApiType::OpenAi;
         let url = "https://models.inference.ai.azure.com/some/path".to_string();
@@ -572,7 +602,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = NetworkClient::new(None);
+        let client = NetworkClient::new(None, 10);
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
         settings.stream = false;
@@ -652,7 +682,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = NetworkClient::new(None);
+        let client = NetworkClient::new(None, 10);
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
 
@@ -750,7 +780,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = NetworkClient::new(None);
+        let client = NetworkClient::new(None, 10);
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
 
@@ -853,7 +883,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = NetworkClient::new(None);
+        let client = NetworkClient::new(None, 10);
         let mut settings = AssistantSettings::default();
         settings.url = mock_server.uri();
         settings.stream = false;
@@ -957,6 +987,7 @@ mod tests {
             presence_penalty: None,
             tools: None,
             parallel_tool_calls: None,
+            timeout: 10,
             stream: true,
             advertisement: false,
             api_type: ApiType::OpenAi,
@@ -969,7 +1000,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(10);
 
         let task = tokio::spawn(async move {
-            let client = NetworkClient::new(None);
+            let client = NetworkClient::new(None, 10);
             let payload = "dummy payload";
             let request = client
                 .prepare_request(settings.clone(), payload.to_string())

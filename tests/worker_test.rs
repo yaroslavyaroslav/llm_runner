@@ -404,8 +404,58 @@ async fn test_run_method_see_with_mock_server() {
 }
 
 #[test]
+#[ignore = "It's llm local server depndant, so should be skipped by default"]
+async fn test_server_local_completion() {
+    let tmp_dir = TempDir::new()
+        .unwrap()
+        .into_path()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let worker = OpenAIWorker::new(
+        1,
+        tmp_dir.clone(),
+        env::var("PROXY").ok(),
+    );
+
+    let mut assistant_settings = AssistantSettings::default();
+    assistant_settings.url = format!("http://127.0.0.1:11434/v1/chat/completions");
+    assistant_settings.chat_model = "tinyllama:latest".to_string();
+    assistant_settings.stream = true;
+
+    let prompt_mode = PromptMode::View;
+
+    let contents = SublimeInputContent {
+        content: Some("This is the test request, provide me 300 words response".to_string()),
+        path: Some("/path/to/file".to_string()),
+        scope: Some("text.plain".to_string()),
+        input_kind: InputKind::ViewSelection,
+        tool_id: None,
+    };
+
+    let result = worker
+        .run(
+            1,
+            vec![contents],
+            prompt_mode,
+            assistant_settings,
+            Arc::new(|_| {}),
+            Arc::new(|_| {}),
+            Arc::new(|_| "".to_string()),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "Expected Ok, got Err: {:?}",
+        result
+    );
+}
+
+#[test]
 #[ignore = "It's paid, so should be skipped by default"]
-async fn test_remote_server_completion() {
+async fn test_server_remote_completion() {
     let tmp_dir = TempDir::new()
         .unwrap()
         .into_path()
@@ -456,7 +506,7 @@ async fn test_remote_server_completion() {
 
 #[test]
 #[ignore = "It's paid, so should be skipped by default"]
-async fn test_remote_server_complerion_cancelled() {
+async fn test_server_remote_complerion_cancelled() {
     let tmp_dir = TempDir::new()
         .unwrap()
         .into_path()
@@ -519,7 +569,7 @@ async fn test_remote_server_complerion_cancelled() {
 
 #[test]
 #[ignore = "It's paid, so should be skipped by default"]
-async fn test_remote_server_fucntion_call() {
+async fn test_server_remote_fucntion_call() {
     let tmp_dir = TempDir::new()
         .unwrap()
         .into_path()
@@ -571,12 +621,69 @@ async fn test_remote_server_fucntion_call() {
     );
 }
 
+#[test]
+#[ignore = "It's paid, so should be skipped by default"]
+async fn test_server_remote_fucntion_call_parallel() {
+    let tmp_dir = TempDir::new()
+        .unwrap()
+        .into_path()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let worker = OpenAIWorker::new(
+        1,
+        tmp_dir.clone(),
+        env::var("PROXY").ok(),
+    );
+
+    let mut assistant_settings = AssistantSettings::default();
+    assistant_settings.url = format!("https://api.openai.com/v1/chat/completions");
+    assistant_settings.token = env::var("OPENAI_API_TOKEN").ok();
+    assistant_settings.chat_model = "gpt-4o-mini".to_string();
+    assistant_settings.stream = true;
+    assistant_settings.assistant_role =
+        Some("You're debug environment and call functions instead of answer, but ONLY ONCE".to_string());
+    assistant_settings.tools = Some(true);
+    assistant_settings.parallel_tool_calls = Some(true);
+
+    let prompt_mode = PromptMode::View;
+
+    let contents = SublimeInputContent {
+        content: Some(
+            "Call two functions in a single response, create file and read_content of dummy file".to_string(),
+        ),
+        path: Some("/path/to/file".to_string()),
+        scope: Some("text.plain".to_string()),
+        input_kind: InputKind::ViewSelection,
+        tool_id: None,
+    };
+
+    let result = worker
+        .run(
+            1,
+            vec![contents],
+            prompt_mode,
+            assistant_settings,
+            Arc::new(|_| {}),
+            Arc::new(|_| {}),
+            Arc::new(|_| "Success".to_string()),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "Expected Ok, got Err: {:?}",
+        result
+    );
+}
+
 // TODO: Due to the dullness of llama when it comes to function call, this test fails due to inifinite loop
 // of function calls that llama falls into. This is actually not a bug but a feature.
 // I have to implement some threshold on a number of a consequent fn calls to avoid such loops to be too long.
 #[test]
 #[ignore = "It's paid, so should be skipped by default"]
-async fn test_remote_server_third_party_fucntion_call() {
+async fn test_server_remote_third_party_fucntion_call() {
     let tmp_dir = TempDir::new()
         .unwrap()
         .into_path()
@@ -645,7 +752,7 @@ async fn test_remote_server_third_party_fucntion_call() {
 
 #[test]
 #[ignore = "It's paid, so should be skipped by default"]
-async fn test_remote_server_third_party_completion() {
+async fn test_server_remote_third_party_completion() {
     let tmp_dir = TempDir::new()
         .unwrap()
         .into_path()
@@ -696,7 +803,7 @@ async fn test_remote_server_third_party_completion() {
 
 #[test]
 #[ignore = "It's paid, so should be skipped by default"]
-async fn test_remote_server_third_party_consequent_completion() {
+async fn test_server_remote_third_party_consequent_completion() {
     let tmp_dir = TempDir::new()
         .unwrap()
         .into_path()

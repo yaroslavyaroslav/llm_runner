@@ -328,7 +328,7 @@ mod tests {
         let mock_entries = vec![
             r#"{"content":"Test request acknowledged.","role":"assistant"}"#,
             r#"{"content":"This is the test request, provide me 3 words response","role":"user"}"#,
-            r#"{"role":"assistant","tool_call":{"id":"call_f4Ixx2ruFvbbqifrMKZ8Cxju","type":"function","function":{"name":"create_file","arguments":"{\"file_path\":\"test_response.txt\"}"}}}"#,
+            r#"{"role":"assistant","tool_calls":[{"id":"call_f4Ixx2ruFvbbqifrMKZ8Cxju","type":"function","function":{"name":"create_file","arguments":"{\"file_path\":\"test_response.txt\"}"}}]172.20.10.2:9090}"#,
             r#"{"role":"tool","tool_call_id":"call_f4Ixx2ruFvbbqifrMKZ8Cxju", "content": "created"}"#,
         ];
 
@@ -353,7 +353,7 @@ mod tests {
                 content: Some("Test request acknowledged.".to_string()),
                 thinking: None,
                 role: Roles::Assistant,
-                tool_call: None,
+                tool_calls: None,
                 path: None,
                 scope: None,
                 tool_call_id: None
@@ -367,7 +367,7 @@ mod tests {
                 content: Some("This is the test request, provide me 3 words response".to_string()),
                 thinking: None,
                 role: Roles::User,
-                tool_call: None,
+                tool_calls: None,
                 path: None,
                 scope: None,
                 tool_call_id: None
@@ -381,14 +381,14 @@ mod tests {
                 content: None,
                 thinking: None,
                 role: Roles::Assistant,
-                tool_call: Some(ToolCall {
+                tool_calls: Some(vec![ToolCall {
                     id: "call_f4Ixx2ruFvbbqifrMKZ8Cxju".to_string(),
                     r#type: "function".to_string(),
                     function: Function {
                         name: "create_file".to_string(),
                         arguments: "{\"file_path\":\"test_response.txt\"}".to_string(),
                     }
-                }),
+                }]),
                 path: None,
                 scope: None,
                 tool_call_id: None
@@ -401,7 +401,7 @@ mod tests {
                 content: Some("created".to_string()),
                 thinking: None,
                 role: Roles::Tool,
-                tool_call: None,
+                tool_calls: None,
                 path: None,
                 scope: None,
                 tool_call_id: Some("call_f4Ixx2ruFvbbqifrMKZ8Cxju".to_string())

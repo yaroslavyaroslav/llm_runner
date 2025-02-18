@@ -12,7 +12,6 @@ use tokio::{
 use crate::{
     cacher::Cacher,
     network_client::NetworkClient,
-    openai_network_types::Function,
     runner::LlmRunner,
     stream_handler::StreamHandler,
     types::{AssistantSettings, PromptMode, SublimeInputContent},
@@ -51,6 +50,7 @@ impl OpenAIWorker {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn run(
         &self,
         view_id: usize,
@@ -64,7 +64,10 @@ impl OpenAIWorker {
         self.is_alive
             .store(true, Ordering::SeqCst);
 
-        let provider = NetworkClient::new(self.proxy.clone());
+        let provider = NetworkClient::new(
+            self.proxy.clone(),
+            assistant_settings.timeout,
+        );
 
         let (tx, rx) = mpsc::channel(view_id);
 

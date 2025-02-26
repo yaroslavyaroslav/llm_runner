@@ -10,6 +10,8 @@ from llm_runner import (
     PromptMode,  # type: ignore
     SublimeInputContent,  # type: ignore
     Worker,  # type: ignore
+    ReasonEffort,  # type: ignore
+    ApiType,  # type: ignore
 )
 
 
@@ -41,9 +43,11 @@ def test_assistant_settings():
         'max_completion_tokens': 2048,
         'top_p': 1.0,
         'frequency_penalty': 2.0,
+        'reasoning_effort': 'low',
         'stream': True,
         'presence_penalty': 3.0,
         'advertisement': True,
+        'api_type': 'open_ai',
     }
 
     settings = AssistantSettings(dicttt)
@@ -61,24 +65,37 @@ def test_assistant_settings():
     assert settings.presence_penalty == 3
     assert settings.tools
     assert settings.parallel_tool_calls is False
+    assert settings.reasoning_effort == ReasonEffort.Low
     assert settings.stream  # defaule value True
     assert settings.advertisement  # defaule value True
     assert settings.output_mode == PromptMode.View
+    assert settings.api_type == ApiType.OpenAi
 
 
-def test_sublime_input_content():
-    sublime_input_content = SublimeInputContent(
-        input_kind=InputKind.ViewSelection,
-        content='This is the test request, provide me 3 words response',
-        path='./',
-        scope='py',
-    )
+def test_assistant_settings_real():
+    dicttt = {
+        'advertisement': False,
+        'api_type': 'open_ai',
+        'assistant_role': 'sdf',
+        'chat_model': 'o3-mini',
+        'name': 'o3-mini low',
+        'reasoning_effort': 'low',
+        'stream': True,
+        'timeout': 20,
+        'token': 'sk-proj-',
+    }
 
-    assert sublime_input_content.input_kind == InputKind.ViewSelection
-    assert sublime_input_content.content == 'This is the test request, provide me 3 words response'
-    assert sublime_input_content.path == './'
-    assert sublime_input_content.scope == 'py'
+    settings = AssistantSettings(dicttt)
 
+    assert settings.name == 'o3-mini low'
+    assert settings.chat_model == 'o3-mini'
+    assert settings.assistant_role == 'sdf'
+    assert settings.token == 'sk-proj-'
+    assert settings.timeout == 20
+    assert settings.reasoning_effort == ReasonEffort.Low
+    assert settings.stream  # defaule value True
+    assert settings.advertisement is False  # defaule value True
+    assert settings.api_type == ApiType.OpenAi
 
 def test_python_worker_plain_run():
     worker = Worker(window_id=101, path=PATH, proxy=os.environ.get('PROXY'))

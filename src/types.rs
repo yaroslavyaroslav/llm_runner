@@ -132,8 +132,11 @@ pub enum InputKind {
 #[derive(EnumString, Display, Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum ReasonEffort {
+    #[strum(serialize = "low")]
     Low,
+    #[strum(serialize = "Medium")]
     Medium,
+    #[strum(serialize = "high")]
     High,
 }
 
@@ -281,8 +284,11 @@ pub struct AssistantSettings {
 #[derive(EnumString, Display, Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum ApiType {
+    #[strum(serialize = "open_ai")]
     OpenAi,
+    #[strum(serialize = "plain_text")]
     PlainText,
+    #[strum(serialize = "antropic")]
     Antropic,
 }
 

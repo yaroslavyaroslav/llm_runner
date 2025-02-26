@@ -307,15 +307,66 @@ mod tests {
 
     use crate::{
         openai_network_types::{Function, Roles, ToolCall},
-        types::CacheEntry,
+        types::{ApiType, AssistantSettings, CacheEntry, ReasonEffort},
     };
+
+    #[test]
+    fn test_assistant_settings() {
+        let mut settings = AssistantSettings::default();
+
+        settings.api_type = ApiType::OpenAi;
+        settings.reasoning_effort = Some(ReasonEffort::High);
+
+        let encoded = serde_json::to_string(&settings).unwrap();
+        let decoded = serde_json::from_str::<AssistantSettings>(&encoded).unwrap();
+
+        assert_eq!(decoded.api_type, ApiType::OpenAi);
+        assert_eq!(
+            decoded
+                .reasoning_effort
+                .unwrap(),
+            ReasonEffort::High
+        );
+    }
+
+    #[test]
+    fn test_assistant_settings_write_read() {
+        let temp_dir = TempDir::new().unwrap();
+        let model_path = temp_dir
+            .path()
+            .join("current_assistant.json");
+        let cacher = Cacher {
+            history_file: "".to_string(),
+            current_model_file: model_path
+                .to_string_lossy()
+                .into_owned(),
+            tokens_count_file: "".to_string(),
+        };
+
+        let mut settings = AssistantSettings::default();
+
+        settings.api_type = ApiType::OpenAi;
+        settings.reasoning_effort = Some(ReasonEffort::High);
+
+        let _ = cacher.write_model(&settings);
+
+        let settings = cacher
+            .read_model::<AssistantSettings>()
+            .unwrap();
+
+        assert_eq!(settings.api_type, ApiType::OpenAi);
+        assert_eq!(
+            settings.reasoning_effort,
+            Some(ReasonEffort::High)
+        );
+    }
 
     #[test]
     fn test_read_entries_with_mock_data() {
         let temp_dir = TempDir::new().unwrap();
         let history_path = temp_dir
             .path()
-            .join("test_history.json");
+            .join("test_history.jl");
         let cacher = Cacher {
             history_file: history_path
                 .to_string_lossy()
@@ -328,7 +379,7 @@ mod tests {
         let mock_entries = vec![
             r#"{"content":"Test request acknowledged.","role":"assistant"}"#,
             r#"{"content":"This is the test request, provide me 3 words response","role":"user"}"#,
-            r#"{"role":"assistant","tool_calls":[{"id":"call_f4Ixx2ruFvbbqifrMKZ8Cxju","type":"function","function":{"name":"create_file","arguments":"{\"file_path\":\"test_response.txt\"}"}}]172.20.10.2:9090}"#,
+            r#"{"role":"assistant","tool_calls":[{"id":"call_f4Ixx2ruFvbbqifrMKZ8Cxju","type":"function","function":{"name":"create_file","arguments":"{\"file_path\":\"test_response.txt\"}"}}]}"#,
             r#"{"role":"tool","tool_call_id":"call_f4Ixx2ruFvbbqifrMKZ8Cxju", "content": "created"}"#,
         ];
 
@@ -339,6 +390,16 @@ mod tests {
                 writeln!(file, "{}", entry).unwrap();
             }
         }
+
+        let file = File::open(&cacher.history_file).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader
+            .lines()
+            .filter_map(Result::ok)
+            .collect();
+
+        // Assert that there are exactly 4 lines.
+        assert_eq!(lines.len(), 4);
 
         // Read entries from the cache
         let read_entries: Vec<CacheEntry> = cacher.read_entries().unwrap();

@@ -24,7 +24,12 @@ use tokio::{
 };
 
 use crate::{
-    openai_network_types::OpenAICompletionRequest,
+    openai_network_types::{
+        ErrorResponse,
+        OpenAICompletionRequest,
+        OpenAIErrorContainer,
+        OtherErrorContainer,
+    },
     types::{AssistantSettings, CacheEntry, SublimeInputContent},
 };
 
@@ -237,9 +242,21 @@ impl NetworkClient {
                 Ok(serde_json::from_value::<T>(result)?)
             } else {
                 debug!("some_error: {:?}", composable_response);
+                let status = &response.status();
+                let error_body_string = response.text().await?;
+                let error_object: ErrorResponse =
+                    serde_json::from_str::<OpenAIErrorContainer>(&error_body_string)
+                        .map(ErrorResponse::OpenAI)
+                        .or_else(|_| {
+                            serde_json::from_str::<OtherErrorContainer>(&error_body_string)
+                                .map(ErrorResponse::Other)
+                        })
+                        .unwrap_or_else(|_| ErrorResponse::Message(error_body_string));
+
                 Err(anyhow::anyhow!(format!(
-                    "Request failed with status: {}",
-                    response.status()
+                    "Request failed with status: {}, the error: {}",
+                    status,
+                    error_object.message()
                 )))
             }
         } else if response.status().is_success() {

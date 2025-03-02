@@ -156,6 +156,9 @@ pub struct SublimeOutputContent {
 
     #[pyo3(get)]
     pub role: Roles,
+
+    #[pyo3(get)]
+    pub path: Option<String>,
 }
 
 impl From<&CacheEntry> for SublimeOutputContent {
@@ -174,6 +177,7 @@ impl From<&CacheEntry> for SublimeOutputContent {
         SublimeOutputContent {
             content: output_contnt,
             role: content.role,
+            path: content.path.clone(),
         }
     }
 }

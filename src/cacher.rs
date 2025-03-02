@@ -307,7 +307,7 @@ mod tests {
 
     use crate::{
         openai_network_types::{Function, Roles, ToolCall},
-        types::{ApiType, AssistantSettings, CacheEntry, ReasonEffort},
+        types::{ApiType, AssistantSettings, CacheEntry, PromptMode, ReasonEffort},
     };
 
     #[test]
@@ -316,21 +316,69 @@ mod tests {
 
         settings.api_type = ApiType::OpenAi;
         settings.reasoning_effort = Some(ReasonEffort::High);
+        settings.name = "Example".to_string();
+        settings.chat_model = "gpt-4o-mini".to_string();
+        settings.assistant_role = Some("Some Role".to_string());
+        settings.url = "https://models.inference.ai.azure.com/path/to".to_string();
+        settings.token = Some("some_token".to_string());
+        settings.temperature = Some(0.7);
+        settings.max_tokens = None;
+        settings.max_completion_tokens = Some(2048);
+        settings.top_p = Some(1.0);
+        settings.frequency_penalty = Some(2.0);
+        settings.presence_penalty = Some(3.0);
+        settings.tools = Some(true);
+        settings.parallel_tool_calls = Some(false);
+        settings.stream = false;
+        settings.advertisement = false;
+        settings.output_mode = PromptMode::View;
+        settings.api_type = ApiType::OpenAi;
 
         let encoded = serde_json::to_string(&settings).unwrap();
         let decoded = serde_json::from_str::<AssistantSettings>(&encoded).unwrap();
 
         assert_eq!(decoded.api_type, ApiType::OpenAi);
         assert_eq!(
-            decoded
-                .reasoning_effort
-                .unwrap(),
-            ReasonEffort::High
+            decoded.reasoning_effort,
+            Some(ReasonEffort::High)
         );
+        assert_eq!(decoded.name, "Example".to_string());
+        assert_eq!(
+            decoded.chat_model,
+            "gpt-4o-mini".to_string()
+        );
+        assert_eq!(
+            decoded.assistant_role,
+            Some("Some Role".to_string())
+        );
+        assert_eq!(
+            decoded.url,
+            "https://models.inference.ai.azure.com/path/to".to_string()
+        );
+        assert_eq!(
+            decoded.token,
+            Some("some_token".to_string())
+        );
+        assert_eq!(decoded.temperature, Some(0.7));
+        assert_eq!(decoded.max_tokens, None);
+        assert_eq!(
+            decoded.max_completion_tokens,
+            Some(2048)
+        );
+        assert_eq!(decoded.top_p, Some(1.0));
+        assert_eq!(decoded.frequency_penalty, Some(2.0));
+        assert_eq!(decoded.presence_penalty, Some(3.0));
+        assert_eq!(decoded.tools, Some(true));
+        assert_eq!(decoded.parallel_tool_calls, Some(false));
+        assert!(!decoded.stream);
+        assert!(!decoded.advertisement);
+        assert_eq!(decoded.output_mode, PromptMode::View);
     }
 
     #[test]
     fn test_assistant_settings_write_read() {
+        use tempfile::TempDir;
+        // Create a temporary directory and file.
         let temp_dir = TempDir::new().unwrap();
         let model_path = temp_dir
             .path()
@@ -345,20 +393,76 @@ mod tests {
 
         let mut settings = AssistantSettings::default();
 
+        // Set fields
         settings.api_type = ApiType::OpenAi;
         settings.reasoning_effort = Some(ReasonEffort::High);
+        settings.name = "Example".to_string();
+        settings.chat_model = "gpt-4o-mini".to_string();
+        settings.assistant_role = Some("Some Role".to_string());
+        settings.url = "https://models.inference.ai.azure.com/path/to".to_string();
+        settings.token = Some("some_token".to_string());
+        settings.temperature = Some(0.7);
+        settings.max_tokens = None;
+        settings.max_completion_tokens = Some(2048);
+        settings.top_p = Some(1.0);
+        settings.frequency_penalty = Some(2.0);
+        settings.presence_penalty = Some(3.0);
+        // Assuming tools here as Option<bool>
+        settings.tools = Some(true);
+        settings.parallel_tool_calls = Some(false);
+        settings.stream = false;
+        settings.advertisement = false;
+        settings.output_mode = PromptMode::View;
+        settings.api_type = ApiType::OpenAi;
 
+        // Write the settings model to file.
         let _ = cacher.write_model(&settings);
 
+        // Read the settings model back from file.
         let settings = cacher
             .read_model::<AssistantSettings>()
             .unwrap();
 
+        // Assert that all fields match the original settings.
         assert_eq!(settings.api_type, ApiType::OpenAi);
         assert_eq!(
             settings.reasoning_effort,
             Some(ReasonEffort::High)
         );
+        assert_eq!(settings.name, "Example".to_string());
+        assert_eq!(
+            settings.chat_model,
+            "gpt-4o-mini".to_string()
+        );
+        assert_eq!(
+            settings.assistant_role,
+            Some("Some Role".to_string())
+        );
+        assert_eq!(
+            settings.url,
+            "https://models.inference.ai.azure.com/path/to".to_string()
+        );
+        assert_eq!(
+            settings.token,
+            Some("some_token".to_string())
+        );
+        assert_eq!(settings.temperature, Some(0.7));
+        assert_eq!(settings.max_tokens, None);
+        assert_eq!(
+            settings.max_completion_tokens,
+            Some(2048)
+        );
+        assert_eq!(settings.top_p, Some(1.0));
+        assert_eq!(settings.frequency_penalty, Some(2.0));
+        assert_eq!(settings.presence_penalty, Some(3.0));
+        assert_eq!(settings.tools, Some(true));
+        assert_eq!(
+            settings.parallel_tool_calls,
+            Some(false)
+        );
+        assert!(!settings.stream);
+        assert!(!settings.advertisement);
+        assert_eq!(settings.output_mode, PromptMode::View);
     }
 
     #[test]

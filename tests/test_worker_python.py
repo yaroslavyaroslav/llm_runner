@@ -44,9 +44,9 @@ def test_assistant_settings():
         'top_p': 1.0,
         'frequency_penalty': 2.0,
         'reasoning_effort': 'low',
-        'stream': True,
+        'stream': False,
         'presence_penalty': 3.0,
-        'advertisement': True,
+        'advertisement': False,
         'api_type': 'open_ai',
     }
 
@@ -66,8 +66,8 @@ def test_assistant_settings():
     assert settings.tools
     assert settings.parallel_tool_calls is False
     assert settings.reasoning_effort == ReasonEffort.Low
-    assert settings.stream  # defaule value True
-    assert settings.advertisement  # defaule value True
+    assert not settings.stream
+    assert not settings.advertisement
     assert settings.output_mode == PromptMode.View
     assert settings.api_type == ApiType.OpenAi
 
@@ -96,6 +96,7 @@ def test_assistant_settings_real():
     assert settings.stream  # defaule value True
     assert settings.advertisement is False  # defaule value True
     assert settings.api_type == ApiType.OpenAi
+
 
 def test_python_worker_plain_run():
     worker = Worker(window_id=101, path=PATH, proxy=os.environ.get('PROXY'))

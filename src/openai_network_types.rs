@@ -25,6 +25,46 @@ impl serde::ser::Serialize for OpenAIRequestMessage {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) enum ErrorResponse {
+    OpenAI(OpenAIErrorContainer),
+    Other(OtherErrorContainer),
+    Message(String),
+}
+
+impl ErrorResponse {
+    pub(crate) fn message(&self) -> String {
+        match self {
+            ErrorResponse::OpenAI(err) => err.message(),
+            ErrorResponse::Other(err) => err.message(),
+            ErrorResponse::Message(msg) => msg.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub(crate) struct OpenAIErrorContainer {
+    pub(crate) error: OpenAIError,
+}
+
+impl OpenAIErrorContainer {
+    fn message(&self) -> String { self.error.message.clone() }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub(crate) struct OpenAIError {
+    pub(crate) message: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub(crate) struct OtherErrorContainer {
+    error: String,
+}
+
+impl OtherErrorContainer {
+    fn message(&self) -> String { self.error.clone() }
+}
+
 #[derive(Debug, Serialize)]
 #[allow(unused)]
 pub struct OpenAICompletionRequest {

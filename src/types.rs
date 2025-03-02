@@ -112,6 +112,14 @@ impl CacheEntry {
                 thinking_part.map(|s| s.to_string())
             })
     }
+
+    pub(crate) fn combined_content(&self) -> String {
+        match (&self.path, &self.content) {
+            (Some(path), Some(content)) => format!("Path: `{}`\n{}", path, content),
+            (None, Some(content)) => content.clone(),
+            (..) => "".to_string(),
+        }
+    }
 }
 
 #[pyclass(eq, eq_int)]
@@ -204,6 +212,14 @@ impl SublimeInputContent {
             scope,
             input_kind,
             tool_id: None,
+        }
+    }
+
+    pub(crate) fn combined_content(&self) -> String {
+        match (&self.path, &self.content) {
+            (Some(path), Some(content)) => format!("Path: `{}`\n{}", path, content),
+            (None, Some(content)) => content.clone(),
+            (..) => "".to_string(),
         }
     }
 }

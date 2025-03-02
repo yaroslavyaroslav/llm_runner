@@ -350,9 +350,7 @@ impl OpenAIPlainTextMessage {
 impl From<CacheEntry> for OpenAIPlainTextMessage {
     fn from(value: CacheEntry) -> Self {
         Self {
-            content: value
-                .content
-                .unwrap_or("".to_string()), // TODO: Make the whole chain optional
+            content: value.combined_content(),
             role: value.role,
             tool_call_id: value.tool_call_id,
             name: None,
@@ -365,9 +363,7 @@ impl From<CacheEntry> for OpenAIPlainTextMessage {
 impl From<SublimeInputContent> for OpenAIPlainTextMessage {
     fn from(value: SublimeInputContent) -> Self {
         Self {
-            content: value
-                .content
-                .unwrap_or("".to_string()), // TODO: Make the whole chain optional
+            content: value.combined_content(),
             role: if value.tool_id.is_some() { Roles::Tool } else { Roles::User },
             tool_call_id: value.tool_id,
             name: None,

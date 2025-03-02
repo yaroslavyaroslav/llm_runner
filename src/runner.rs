@@ -110,7 +110,7 @@ impl LlmRunner {
                         .clone(),
                 ))
         } else {
-            Ok(())
+            result.map(|_| ())
         }
     }
 

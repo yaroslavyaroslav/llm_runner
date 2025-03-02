@@ -908,7 +908,7 @@ checksum = "4ee93343901ab17bd981295f2cf0026d4ad018c7c31ba84549a4ddbb47a45104"
 
 [[package]]
 name = "llm_runner"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "anyhow",
  "eventsource-stream",

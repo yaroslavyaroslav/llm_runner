@@ -197,7 +197,8 @@ def test_python_worker_sse_function_run():
         print(f'Received data: {data}')
 
     contents = SublimeInputContent(
-        InputKind.ViewSelection, 'This is the test request, call the create_file function'
+        InputKind.ViewSelection,
+        'This is the test request, call the read_region_content function on /tmp/some.txt',
     )
 
     dicttt = {
@@ -249,7 +250,6 @@ async def test_python_worker_sse_function_run_cancel():
         'url': 'https://api.openai.com/v1/chat/completions',
         'token': os.getenv('OPENAI_API_TOKEN'),
         'tools': False,
-        'parallel_tool_calls': False,
         'stream': True,
         'advertisement': False,
     }

@@ -251,7 +251,9 @@ impl NetworkClient {
                             serde_json::from_str::<OtherErrorContainer>(&error_body_string)
                                 .map(ErrorResponse::Other)
                         })
-                        .unwrap_or_else(|_| ErrorResponse::Message(error_body_string));
+                        .unwrap_or(ErrorResponse::Message(
+                            error_body_string,
+                        ));
 
                 Err(anyhow::anyhow!(format!(
                     "Request failed with status: {}, the error: {}",

@@ -410,6 +410,10 @@ impl AssistantSettings {
 
         default
     }
+
+    pub fn deep_copy(&self) -> Self {
+        self.clone() // This will use the derived Clone implementation
+    }
 }
 
 impl Default for AssistantSettings {

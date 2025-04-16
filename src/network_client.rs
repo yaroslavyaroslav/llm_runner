@@ -28,8 +28,10 @@ use crate::{
         ErrorResponse,
         OpenAICompletionRequest,
         OpenAIErrorContainer,
+        OpenAIMessageType,
         OtherErrorContainer,
     },
+    openai_response_types::{Content, Message, ResponsesResponse},
     types::{AssistantSettings, CacheEntry, SublimeInputContent},
 };
 
@@ -105,6 +107,182 @@ impl NetworkClient {
             .headers(headers)
             .body(json_payload)
             .build()?)
+    }
+
+    pub async fn execute_responses_request(
+        &self,
+        request: Request,
+        sender: Arc<Mutex<Sender<String>>>,
+        cancel_flag: Arc<AtomicBool>,
+        stream: bool,
+    ) -> Result<ResponsesResponse> {
+        let response = self
+            .client
+            .execute(request)
+            .await?;
+
+        #[cfg(debug_assertions)]
+        use crate::logger;
+        #[cfg(debug_assertions)]
+        let _ = logger::setup_logger("/tmp/rsvr_log.log");
+
+        if stream {
+            let mut composed_text: String = String::new();
+
+            if response.status().is_success() {
+                let mut stream = response
+                    .bytes_stream()
+                    .eventsource();
+
+                loop {
+                    match timeout(
+                        Duration::from_secs(self.timeout as u64),
+                        stream.next(),
+                    )
+                    .await
+                    {
+                        Ok(Some(Ok(event))) => {
+                            if event.event == "response.output_text.delta" {
+                                let cloned_sender = Arc::clone(&sender);
+
+                                let json_value = serde_json::from_str::<Value>(&event.data).unwrap();
+
+                                let content = json_value
+                                    .as_object()
+                                    .and_then(|o| o.get("delta"))
+                                    .and_then(|delta| delta.as_str())
+                                    .unwrap();
+
+                                // debug!(
+                                //     "received json: {:?}",
+                                //     event
+                                //         .data
+                                //         .get("delta")
+                                //         .unwrap()
+                                // );
+
+                                composed_text += content;
+
+                                cloned_sender
+                                    .lock()
+                                    .await
+                                    .send(content.to_string())
+                                    .await
+                                    .unwrap();
+                            } else if event.event == "event: response.output_text.done" {
+                                break;
+                            }
+                        }
+                        Ok(Some(Err(e))) => {
+                            debug!("Error of accessing event: {:?}", e);
+                            break;
+                        }
+                        Ok(None) => {
+                            // Stream is exhausted
+                            debug!("Stream is exhausted");
+                            break;
+                        }
+                        Err(_) => {
+                            // Timeout exceeded
+                            debug!("Stream is stalled");
+                            let cloned_sender = Arc::clone(&sender);
+
+                            cloned_sender
+                                .lock()
+                                .await
+                                .send("\n[STALLED]".to_string())
+                                .await
+                                .ok();
+                            break; // fuckers from together can stall stream for more than 10 secs for R1
+                        }
+                    }
+                }
+
+                if cancel_flag.load(Ordering::SeqCst) {
+                    let cloned_sender = Arc::clone(&sender);
+
+                    cloned_sender
+                        .lock()
+                        .await
+                        .send("\n[ABORTED]".to_string())
+                        .await
+                        .ok();
+                }
+
+                drop(sender);
+
+                let content = Content {
+                    r#type: OpenAIMessageType::OutputText, // Use an appropriate variant if available
+                    text: Some(composed_text),
+                    annotations: None,
+                };
+
+                let message = Message {
+                    r#type: "message".to_string(), // Adjust as needed
+                    id: "unique_id".to_string(),
+                    status: "ok".to_string(),
+                    role: "assistant".to_string(), // or "user" as appropriate
+                    content: vec![content],
+                };
+
+                let result = ResponsesResponse {
+                    output: vec![message],
+                    ..Default::default()
+                };
+
+                Ok(result)
+            } else {
+                // debug!("some_error: {:?}", composable_response);
+                let status = &response.status();
+                let error_body_string = response.text().await?;
+                let error_object: ErrorResponse =
+                    serde_json::from_str::<OpenAIErrorContainer>(&error_body_string)
+                        .map(ErrorResponse::OpenAI)
+                        .or_else(|_| {
+                            serde_json::from_str::<OtherErrorContainer>(&error_body_string)
+                                .map(ErrorResponse::Other)
+                        })
+                        .unwrap_or(ErrorResponse::Message(
+                            error_body_string,
+                        ));
+
+                Err(anyhow::anyhow!(format!(
+                    "Request failed with status: {}, the error: {}",
+                    status,
+                    error_object.message()
+                )))
+            }
+        } else if response.status().is_success() {
+            let result = response
+                .json::<ResponsesResponse>()
+                .await?;
+
+            let cloned_sender = Arc::clone(&sender);
+            let string = result
+                .clone()
+                .output
+                .last()
+                .unwrap()
+                .content
+                .last()
+                .unwrap()
+                .text
+                .clone()
+                .unwrap();
+
+            cloned_sender
+                .lock()
+                .await
+                .send(string)
+                .await
+                .ok();
+            Ok(result)
+        } else {
+            Err(anyhow::anyhow!(format!(
+                "Request failed with status: {}",
+                response.status()
+            )))
+        }
     }
 
     pub async fn execute_plain_api_request<T>(

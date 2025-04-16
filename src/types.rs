@@ -5,7 +5,10 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
 
-use crate::openai_network_types::{AssistantMessage, Roles, ToolCall};
+use crate::{
+    openai_network_types::{AssistantMessage, Roles, ToolCall},
+    openai_response_types::ResponsesResponse,
+};
 
 #[allow(unused)]
 #[pyclass(eq, eq_int)]
@@ -70,6 +73,33 @@ impl From<SublimeInputContent> for CacheEntry {
             role,
             tool_calls: None,
             tool_call_id: content.tool_id,
+        }
+    }
+}
+
+impl From<ResponsesResponse> for CacheEntry {
+    fn from(content: ResponsesResponse) -> Self {
+        let role = Roles::Assistant;
+        let text_content = content
+            .clone()
+            .output
+            .iter()
+            .flat_map(|m| {
+                m.content
+                    .iter()
+                    .filter_map(|c| c.text.clone())
+            })
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        CacheEntry {
+            content: Some(text_content),
+            thinking: None,
+            path: None,
+            scope: None,
+            role,
+            tool_calls: None,
+            tool_call_id: None,
         }
     }
 }

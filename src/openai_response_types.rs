@@ -10,10 +10,9 @@ use crate::{
     types::{ApiType, AssistantSettings, CacheEntry, InputKind, Reason, ReasonEffort, SublimeInputContent},
 };
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Response {
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ResponsesResponse {
     pub id: String,
-    pub object: String,
     pub created_at: i64,
     pub status: Option<String>,
     pub error: Option<Value>,
@@ -36,7 +35,35 @@ pub struct Response {
     pub user: Option<Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+impl Default for ResponsesResponse {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            created_at: 0,
+            status: None,
+            error: None,
+            incomplete_details: None,
+            instructions: None,
+            max_output_tokens: None,
+            model: String::new(),
+            output: Vec::new(),
+            parallel_tool_calls: None,
+            previous_response_id: None,
+            reasoning: None,
+            store: None,
+            temperature: 0.0,
+            text: None,
+            tool_choice: String::new(),
+            tools: None,
+            top_p: 0.0,
+            truncation: String::new(),
+            usage: None,
+            user: None,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Message {
     #[serde(rename = "type")]
     pub r#type: String,
@@ -46,7 +73,7 @@ pub struct Message {
     pub content: Vec<Content>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Content {
     #[serde(rename = "type")]
     pub r#type: OpenAIMessageType,
@@ -54,24 +81,24 @@ pub struct Content {
     pub annotations: Option<Vec<Value>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Reasoning {
     pub effort: Option<Value>,
     pub generate_summary: Option<Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Text {
     pub format: Format,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Format {
     #[serde(rename = "type")]
     pub r#type: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Usage {
     pub input_tokens: u64,
     pub input_tokens_details: InputTokensDetails,
@@ -80,12 +107,12 @@ pub struct Usage {
     pub total_tokens: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InputTokensDetails {
     pub cached_tokens: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OutputTokensDetails {
     pub reasoning_tokens: u64,
 }

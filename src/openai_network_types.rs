@@ -5,8 +5,8 @@ use serde_json::{Map, Value};
 use strum_macros::{Display, EnumString};
 
 use crate::{
-    tools_definition::FUNCTIONS,
-    types::{ApiType, AssistantSettings, CacheEntry, InputKind, ReasonEffort, SublimeInputContent},
+    tools_definition::OPENAI_DEFINED,
+    types::{ApiType, AssistantSettings, CacheEntry, InputKind, Reason, ReasonEffort, SublimeInputContent},
 };
 
 #[derive(Debug)]
@@ -77,7 +77,7 @@ impl OtherErrorContainer {
 #[derive(Debug, Serialize)]
 #[allow(unused)]
 pub struct OpenAICompletionRequest {
-    pub(crate) messages: Vec<OpenAIRequestMessage>,
+    pub(crate) input: Vec<OpenAIRequestMessage>,
 
     pub(crate) stream: bool,
 
@@ -106,7 +106,7 @@ pub struct OpenAICompletionRequest {
     pub(crate) presence_penalty: Option<f64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) reasoning_effort: Option<ReasonEffort>,
+    pub(crate) reasoning: Option<Reason>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) parallel_tool_calls: Option<bool>,
@@ -181,14 +181,18 @@ impl OpenAICompletionRequest {
         messages.sort_by_key(|m| m.weight());
 
         OpenAICompletionRequest {
-            messages,
+            input: messages,
             stream: settings.stream,
             chat_model: settings.chat_model,
             advertisement: settings.advertisement,
             temperature: settings.temperature,
             max_tokens: settings.max_tokens,
             max_completion_tokens: settings.max_completion_tokens,
-            reasoning_effort: settings.reasoning_effort,
+            reasoning: if let Some(effor) = settings.reasoning_effort {
+                Some(Reason::new(effor))
+            } else {
+                None
+            },
             top_p: settings.top_p,
             frequency_penalty: settings.frequency_penalty,
             presence_penalty: settings.presence_penalty,
@@ -197,7 +201,7 @@ impl OpenAICompletionRequest {
                 .unwrap_or(false)
             {
                 Some(
-                    FUNCTIONS
+                    OPENAI_DEFINED
                         .iter()
                         .map(|tool| tool.as_ref().clone())
                         .collect::<Vec<Tool>>(),
@@ -288,9 +292,9 @@ impl OpenAIMessage {
 impl From<CacheEntry> for OpenAIMessage {
     fn from(value: CacheEntry) -> Self {
         OpenAIMessage {
-            content: value
-                .content
-                .map(|c| vec![MessageContent::from_text(c)]),
+            content: Some(vec![MessageContent::from_cache(
+                value.clone(),
+            )]),
             role: value.role,
             tool_call_id: value.tool_call_id,
             name: None,
@@ -379,12 +383,23 @@ pub struct MessageContent {
     pub content: ContentWrapper,
 }
 
-#[allow(unused)]
 impl MessageContent {
     pub(crate) fn from_text(content: String) -> Self {
         MessageContent {
-            r#type: OpenAIMessageType::Text,
+            r#type: OpenAIMessageType::InputText,
             content: ContentWrapper::Text(content),
+        }
+    }
+    pub(crate) fn from_cache(cache: CacheEntry) -> Self {
+        let r#type = if cache.role == Roles::Assistant {
+            OpenAIMessageType::OutputText
+        } else {
+            OpenAIMessageType::InputText
+        };
+
+        MessageContent {
+            r#type,
+            content: ContentWrapper::Text(cache.content.unwrap()),
         }
     }
 }
@@ -476,7 +491,8 @@ pub enum Roles {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum OpenAIMessageType {
-    Text,
+    OutputText,
+    InputText,
     ImageUrl,
     InputAudio,
 }
@@ -485,7 +501,10 @@ pub enum OpenAIMessageType {
 #[serde(rename_all = "snake_case")]
 pub struct Tool {
     pub(crate) r#type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) function: Option<FunctionToCall>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) search_context_size: Option<ReasonEffort>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -504,7 +523,7 @@ pub(crate) struct OpenAIResponse {
     pub(crate) id: Option<String>,
     pub(crate) object: Option<String>,
     pub(crate) created: Option<i64>,
-    pub(crate) model: String,
+    pub(crate) model: Option<String>,
     pub(crate) choices: Vec<Choice>,
 }
 
@@ -689,10 +708,10 @@ mod tests {
     #[test]
     fn test_openai_request_serialization_simple() {
         let request = OpenAICompletionRequest {
-            messages: vec![OpenAIRequestMessage::OpenAIMessage(
+            input: vec![OpenAIRequestMessage::OpenAIMessage(
                 OpenAIMessage {
                     content: vec![MessageContent {
-                        r#type: OpenAIMessageType::Text,
+                        r#type: OpenAIMessageType::InputText,
                         content: ContentWrapper::Text("Hello, world!".to_string()),
                     }]
                     .into(),
@@ -714,7 +733,7 @@ mod tests {
             presence_penalty: Some(0.0),
             tools: None,
             parallel_tool_calls: None,
-            reasoning_effort: None,
+            reasoning: None,
         };
 
         let serialized = serde_json::to_string(&request).unwrap();
@@ -746,11 +765,11 @@ mod tests {
     #[test]
     fn test_openai_request_serialization_full() {
         let request = OpenAICompletionRequest {
-            messages: vec![
+            input: vec![
                 OpenAIRequestMessage::OpenAIMessage(OpenAIMessage {
                     content: vec![
                         MessageContent {
-                            r#type: OpenAIMessageType::Text,
+                            r#type: OpenAIMessageType::InputText,
                             content: ContentWrapper::Text("Tell me a story.".to_string()),
                         },
                         MessageContent {
@@ -770,7 +789,7 @@ mod tests {
                 }),
                 OpenAIRequestMessage::OpenAIMessage(OpenAIMessage {
                     content: vec![MessageContent {
-                        r#type: OpenAIMessageType::Text,
+                        r#type: OpenAIMessageType::InputText,
                         content: ContentWrapper::Text("This is the assistant speaking.".to_string()),
                     }]
                     .into(),
@@ -812,10 +831,11 @@ mod tests {
                     .cloned(),
                     strict: Some(true),
                 }),
+                search_context_size: None,
             }]),
 
             parallel_tool_calls: Some(false),
-            reasoning_effort: None,
+            reasoning: None,
         };
 
         let serialized = serde_json::to_string(&request).unwrap();
@@ -887,7 +907,7 @@ mod tests {
     #[test]
     fn test_openai_request_serialization_minimal() {
         let request = OpenAICompletionRequest {
-            messages: vec![],
+            input: vec![],
             stream: false,
             chat_model: "gpt-4o".to_string(),
             advertisement: false,
@@ -899,7 +919,7 @@ mod tests {
             presence_penalty: None,
             tools: None,
             parallel_tool_calls: None,
-            reasoning_effort: None,
+            reasoning: None,
         };
 
         let serialized = serde_json::to_string(&request).unwrap();
@@ -919,7 +939,7 @@ mod tests {
             id: Some("123".to_string()),
             object: Some("openai_response".to_string()),
             created: Some(1616161616),
-            model: "gpt-3.5".to_string(),
+            model: Some("gpt-3.5".to_string()),
             choices: vec![Choice {
                 index: 0,
                 finish_reason: None,
@@ -1007,7 +1027,7 @@ mod tests {
     fn test_openai_message_serialization_with_multiple_types_no_deserialization() {
         let message_content = vec![
             MessageContent {
-                r#type: OpenAIMessageType::Text,
+                r#type: OpenAIMessageType::InputText,
                 content: ContentWrapper::Text("Text string".to_string()),
             },
             MessageContent {
@@ -1073,7 +1093,7 @@ mod tests {
             Some("openai_response".to_string())
         );
         assert_eq!(response.created, Some(1616161616));
-        assert_eq!(response.model, "gpt-4o");
+        assert_eq!(response.model, Some("gpt-4o".into()));
         assert_eq!(response.choices.len(), 1);
         assert_eq!(response.choices[0].index, 0);
         assert_eq!(
@@ -1119,7 +1139,7 @@ mod tests {
             Some("openai_response".to_string())
         );
         assert_eq!(response.created, Some(1616161616));
-        assert_eq!(response.model, "gpt-4o");
+        assert_eq!(response.model, Some("gpt-4o".into()));
         assert_eq!(response.choices.len(), 1);
         assert_eq!(response.choices[0].index, 0);
         assert_eq!(
@@ -1159,7 +1179,7 @@ mod tests {
                 Box::new(OpenAIMessage {
                     role: Roles::User,
                     content: Some(vec![MessageContent {
-                        r#type: OpenAIMessageType::Text,
+                        r#type: OpenAIMessageType::InputText,
                         content: ContentWrapper::Text("What is the weather today?".to_string()),
                     }]),
                     tool_call_id: None,
@@ -1257,23 +1277,19 @@ mod tests {
         );
 
         // There should be a system message plus one cache entry plus the four sublime inputs.
-        assert_eq!(request.messages.len(), 6);
+        assert_eq!(request.input.len(), 6);
 
         // Sorted order should follow the weight order, where:
         // SystemMessage (0), SheetContent (1), CacheEntry (2), OutputPaneContent (3), ViewSelection (4), UserCommand (5)
         let weights: Vec<u8> = request
-            .messages
+            .input
             .iter()
             .map(message_weight)
             .collect();
         assert_eq!(weights, vec![0, 1, 2, 3, 4, 5]);
 
         // Verify the last message is a UserCommand.
-        match request
-            .messages
-            .last()
-            .unwrap()
-        {
+        match request.input.last().unwrap() {
             OpenAIRequestMessage::OpenAIMessage(msg) => {
                 assert_eq!(msg.kind, MessageKind::UserCommand);
             }
@@ -1311,21 +1327,17 @@ mod tests {
             sublime_inputs,
         );
 
-        assert_eq!(request.messages.len(), 6);
+        assert_eq!(request.input.len(), 6);
 
         let weights: Vec<u8> = request
-            .messages
+            .input
             .iter()
             .map(message_weight)
             .collect();
         assert_eq!(weights, vec![0, 1, 2, 3, 4, 5]);
 
         // Verify the last message is a FunctionResult.
-        match request
-            .messages
-            .last()
-            .unwrap()
-        {
+        match request.input.last().unwrap() {
             OpenAIRequestMessage::OpenAIMessage(msg) => {
                 assert_eq!(msg.kind, MessageKind::FunctionResult);
             }
@@ -1359,10 +1371,10 @@ mod tests {
             sublime_inputs,
         );
 
-        assert_eq!(request.messages.len(), 6);
+        assert_eq!(request.input.len(), 6);
 
         let weights: Vec<u8> = request
-            .messages
+            .input
             .iter()
             .map(message_weight)
             .collect();
@@ -1370,11 +1382,7 @@ mod tests {
 
         // For PlainText branch, messages are built using OpenAIPlainTextMessage.
         // Verify the last message is a UserCommand.
-        match request
-            .messages
-            .last()
-            .unwrap()
-        {
+        match request.input.last().unwrap() {
             OpenAIRequestMessage::OpenAIPlainTextMessage(msg) => {
                 assert_eq!(msg.kind, MessageKind::UserCommand);
             }
@@ -1411,21 +1419,17 @@ mod tests {
             sublime_inputs,
         );
 
-        assert_eq!(request.messages.len(), 6);
+        assert_eq!(request.input.len(), 6);
 
         let weights: Vec<u8> = request
-            .messages
+            .input
             .iter()
             .map(message_weight)
             .collect();
         assert_eq!(weights, vec![0, 1, 2, 3, 4, 5]);
 
         // Verify the last message is a FunctionResult.
-        match request
-            .messages
-            .last()
-            .unwrap()
-        {
+        match request.input.last().unwrap() {
             OpenAIRequestMessage::OpenAIPlainTextMessage(msg) => {
                 assert_eq!(msg.kind, MessageKind::FunctionResult);
             }
@@ -1479,7 +1483,7 @@ mod tests {
 
         // Extract text from cache entry messages (weight 2).
         let cache_texts: Vec<String> = request
-            .messages
+            .input
             .iter()
             .filter_map(|msg| {
                 let m = match msg {
@@ -1517,7 +1521,7 @@ mod tests {
 
         // Extract text from sublime input messages.
         let sublime_texts: Vec<String> = request
-            .messages
+            .input
             .iter()
             .filter_map(|msg| {
                 // For ApiType::OpenAi we expect these to be OpenAIMessage variants.
@@ -1600,13 +1604,13 @@ mod tests {
 
         // Expecting: system message (weight 0), then two cache entries (weight 2),
         // and finally the sublime input (weight 5).
-        assert_eq!(request.messages.len(), 4);
+        assert_eq!(request.input.len(), 4);
 
         // Check system message.
-        match &request.messages[0] {
+        match &request.input[0] {
             OpenAIRequestMessage::OpenAIMessage(msg) => {
                 assert_eq!(msg.kind, MessageKind::SystemMessage);
-                let text = get_message_text(&request.messages[0]);
+                let text = get_message_text(&request.input[0]);
                 // Since no advertisement is applied here, the system text should equal the settings value.
                 assert_eq!(text, "System role");
             }
@@ -1614,30 +1618,30 @@ mod tests {
         }
 
         // Check first cache entry (should be the one from User).
-        match &request.messages[1] {
+        match &request.input[1] {
             OpenAIRequestMessage::OpenAIMessage(msg) => {
                 assert_eq!(msg.kind, MessageKind::CacheEntry);
-                let text = get_message_text(&request.messages[1]);
+                let text = get_message_text(&request.input[1]);
                 assert_eq!(text, "cache user");
             }
             _ => panic!("Expected first cache entry to be OpenAIMessage variant"),
         }
 
         // Check second cache entry (should be the one from Assistant).
-        match &request.messages[2] {
+        match &request.input[2] {
             OpenAIRequestMessage::OpenAIMessage(msg) => {
                 assert_eq!(msg.kind, MessageKind::CacheEntry);
-                let text = get_message_text(&request.messages[2]);
+                let text = get_message_text(&request.input[2]);
                 assert_eq!(text, "cache assistant");
             }
             _ => panic!("Expected second cache entry to be OpenAIMessage variant"),
         }
 
         // Check sublime input: the last message should be a UserCommand.
-        match &request.messages[3] {
+        match &request.input[3] {
             OpenAIRequestMessage::OpenAIMessage(msg) => {
                 assert_eq!(msg.kind, MessageKind::UserCommand);
-                let text = get_message_text(&request.messages[3]);
+                let text = get_message_text(&request.input[3]);
                 assert_eq!(text, "user command");
             }
             _ => panic!("Expected sublime input message to be OpenAIMessage variant"),
@@ -1668,43 +1672,43 @@ mod tests {
         );
 
         // Expecting: system message, two cache entries, then the sublime input.
-        assert_eq!(request.messages.len(), 4);
+        assert_eq!(request.input.len(), 4);
 
         // Check system message.
-        match &request.messages[0] {
+        match &request.input[0] {
             OpenAIRequestMessage::OpenAIMessage(msg) => {
                 assert_eq!(msg.kind, MessageKind::SystemMessage);
-                let text = get_message_text(&request.messages[0]);
+                let text = get_message_text(&request.input[0]);
                 assert_eq!(text, "System role");
             }
             _ => panic!("Expected system message to be OpenAIMessage variant"),
         }
 
         // Check first cache entry (User).
-        match &request.messages[1] {
+        match &request.input[1] {
             OpenAIRequestMessage::OpenAIMessage(msg) => {
                 assert_eq!(msg.kind, MessageKind::CacheEntry);
-                let text = get_message_text(&request.messages[1]);
+                let text = get_message_text(&request.input[1]);
                 assert_eq!(text, "cache user");
             }
             _ => panic!("Expected first cache entry to be OpenAIMessage variant"),
         }
 
         // Check second cache entry (Assistant).
-        match &request.messages[2] {
+        match &request.input[2] {
             OpenAIRequestMessage::OpenAIMessage(msg) => {
                 assert_eq!(msg.kind, MessageKind::CacheEntry);
-                let text = get_message_text(&request.messages[2]);
+                let text = get_message_text(&request.input[2]);
                 assert_eq!(text, "cache assistant");
             }
             _ => panic!("Expected second cache entry to be OpenAIMessage variant"),
         }
 
         // Check sublime input: the last message should be a ViewSelection.
-        match &request.messages[3] {
+        match &request.input[3] {
             OpenAIRequestMessage::OpenAIMessage(msg) => {
                 assert_eq!(msg.kind, MessageKind::ViewSelection);
-                let text = get_message_text(&request.messages[3]);
+                let text = get_message_text(&request.input[3]);
                 assert_eq!(text, "view selection");
             }
             _ => panic!("Expected sublime input message to be OpenAIMessage variant"),

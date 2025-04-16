@@ -53,7 +53,7 @@ impl LlmRunner {
 
         // TODO: To make type to cast conditional to support various of protocols
         let result = provider
-            .execute_request::<OpenAIResponse>(
+            .execute_plain_api_request::<OpenAIResponse>(
                 request,
                 Arc::clone(&sender),
                 Arc::clone(&cancel_flag),

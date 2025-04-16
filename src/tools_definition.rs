@@ -4,7 +4,10 @@ use once_cell::sync::Lazy;
 use serde_json::json;
 use strum_macros::{Display, EnumString};
 
-use crate::openai_network_types::{FunctionToCall, Tool};
+use crate::{
+    openai_network_types::{FunctionToCall, Tool},
+    types::ReasonEffort,
+};
 
 #[derive(EnumString, PartialEq, Display, Debug, Clone, Copy)]
 #[strum(serialize_all = "snake_case")]
@@ -24,6 +27,16 @@ pub static FUNCTIONS: Lazy<Vec<Arc<Tool>>> = Lazy::new(|| {
         Arc::new((*READ_REGION_CONTENT).clone()),
         Arc::new((*GET_WORKING_DIRECTORY_CONTENT).clone()),
     ]
+});
+
+pub static OPENAI_DEFINED: Lazy<Vec<Arc<Tool>>> = Lazy::new(|| vec![Arc::new((*WEB_SEARCH).clone())]);
+
+pub static WEB_SEARCH: Lazy<Tool> = Lazy::new(|| {
+    Tool {
+        r#type: "web_search_preview".to_string(),
+        function: None,
+        search_context_size: Some(ReasonEffort::High),
+    }
 });
 
 #[allow(dead_code)]
@@ -48,6 +61,7 @@ pub static CREATE_FILE: Lazy<Tool> = Lazy::new(|| {
             .cloned(),
             strict: Some(true),
         }),
+        search_context_size: None,
     }
 });
 
@@ -80,6 +94,7 @@ pub static REPLACE_TEXT_WITH_ANOTHER_TEXT: Lazy<Tool> = Lazy::new(|| {
             .cloned(),
             strict: Some(true),
         }),
+        search_context_size: None,
     }
 });
 
@@ -113,6 +128,7 @@ pub static REPLACE_TEXT_FOR_WHOLE_FILE: Lazy<Tool> = Lazy::new(|| {
             .cloned(),
             strict: Some(true),
         }),
+        search_context_size: None,
     }
 });
 
@@ -141,6 +157,7 @@ pub static GET_WORKING_DIRECTORY_CONTENT: Lazy<Tool> = Lazy::new(|| {
             .cloned(),
             strict: Some(true),
         }),
+        search_context_size: None,
     }
 });
 
@@ -181,5 +198,6 @@ pub static READ_REGION_CONTENT: Lazy<Tool> = Lazy::new(|| {
             .cloned(),
             strict: Some(true),
         }),
+        search_context_size: None,
     }
 });

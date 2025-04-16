@@ -18,7 +18,7 @@ pub enum PromptMode {
     // OutputPanel, // TODO: review is it necessary
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct CacheEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -134,6 +134,17 @@ pub enum InputKind {
     Sheet,
     FunctionResult,
     AssistantResponse,
+}
+
+#[pyclass(eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct Reason {
+    effort: ReasonEffort,
+}
+
+impl Reason {
+    pub fn new(effort: ReasonEffort) -> Self { Reason { effort } }
 }
 
 #[pyclass(eq, eq_int)]
@@ -423,7 +434,7 @@ impl Default for AssistantSettings {
             output_mode: PromptMode::Phantom,
             chat_model: "gpt-4o-mini".to_string(),
             assistant_role: None,
-            url: "https://api.openai.com/v1/chat/completions".to_string(),
+            url: "https://api.openai.com/v1/responses".to_string(),
             reasoning_effort: None,
             token: None,
             temperature: None,

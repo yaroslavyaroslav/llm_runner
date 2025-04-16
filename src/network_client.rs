@@ -107,7 +107,7 @@ impl NetworkClient {
             .build()?)
     }
 
-    pub async fn execute_request<T>(
+    pub async fn execute_plain_api_request<T>(
         &self,
         request: Request,
         sender: Arc<Mutex<Sender<String>>>,
@@ -650,7 +650,7 @@ mod tests {
         let (tx, _) = mpsc::channel(10);
 
         let response: Result<TestResponse, _> = client
-            .execute_request(
+            .execute_plain_api_request(
                 request,
                 Arc::new(Mutex::new(tx)),
                 Arc::new(AtomicBool::new(false)),
@@ -729,7 +729,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(10);
 
         let result = client
-            .execute_request::<Map<String, Value>>(
+            .execute_plain_api_request::<Map<String, Value>>(
                 request,
                 Arc::new(Mutex::new(tx)),
                 Arc::new(AtomicBool::new(false)),
@@ -811,7 +811,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(10);
 
         let result = client
-            .execute_request::<Map<String, Value>>(
+            .execute_plain_api_request::<Map<String, Value>>(
                 request,
                 Arc::new(Mutex::new(tx)),
                 Arc::new(AtomicBool::new(false)),
@@ -915,7 +915,7 @@ mod tests {
         let (tx, _) = mpsc::channel(10);
 
         let result: Map<String, Value> = client
-            .execute_request::<Map<String, Value>>(
+            .execute_plain_api_request::<Map<String, Value>>(
                 request,
                 Arc::new(Mutex::new(tx)),
                 Arc::new(AtomicBool::new(false)),
@@ -1028,7 +1028,7 @@ mod tests {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
             let response = client
-                .execute_request::<Map<String, Value>>(
+                .execute_plain_api_request::<Map<String, Value>>(
                     request,
                     Arc::new(Mutex::new(tx)),
                     cancel_flag_clone,

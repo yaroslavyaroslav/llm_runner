@@ -1,6 +1,7 @@
 mod cacher;
 mod network_client;
 mod openai_network_types;
+mod openai_response_types;
 pub mod types;
 
 mod logger;

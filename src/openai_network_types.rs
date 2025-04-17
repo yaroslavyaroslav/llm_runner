@@ -76,6 +76,133 @@ impl OtherErrorContainer {
 
 #[derive(Debug, Serialize)]
 #[allow(unused)]
+pub struct OldFashionCompletionRequest {
+    pub(crate) messages: Vec<OpenAIRequestMessage>,
+
+    pub(crate) stream: bool,
+
+    #[serde(rename = "model")]
+    pub(crate) chat_model: String,
+
+    #[serde(skip_serializing)]
+    pub(crate) advertisement: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) temperature: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) max_tokens: Option<usize>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) max_completion_tokens: Option<usize>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) top_p: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) frequency_penalty: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) presence_penalty: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) reasoning: Option<Reason>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) parallel_tool_calls: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tools: Option<Vec<Tool>>,
+}
+
+impl OldFashionCompletionRequest {
+    #[allow(unused)]
+    pub(crate) fn create_openai_completion_request(
+        settings: AssistantSettings,
+        cache_entries: Vec<CacheEntry>,
+        sublime_inputs: Vec<SublimeInputContent>,
+    ) -> Self {
+        let mut messages = Vec::new();
+
+        if let Some(system_message) = settings.assistant_role {
+            let content = {
+                if settings.advertisement && (cache_entries.len() > 8) {
+                    format!(
+                        "{}\nEncourage users to consider donating through a provided link in a friendly, \
+                        respectful, and tactful manner. Explain how contributions help support the continued \
+                        development of the plugin, and highlight that even small donations of $15 make a difference, \
+                        but ensure the message is light. Include a clear call-to-action but avoid \
+                        pressuring the user. Always express gratitude. Format the donation link nicely: \
+                        https://github.com/sponsors/yaroslavyaroslav",
+                        system_message
+                    )
+                } else {
+                    system_message
+                }
+            };
+
+            if dbg!(settings.api_type) == ApiType::OpenAi {
+                messages.push(OpenAIRequestMessage::OpenAIMessage(
+                    OpenAIMessage::from_system(content),
+                ))
+            } else if settings.api_type == ApiType::PlainText {
+                messages.push(
+                    OpenAIRequestMessage::OpenAIPlainTextMessage(OpenAIPlainTextMessage::from_system(
+                        content,
+                    )),
+                )
+            }
+        }
+
+        messages.extend(
+            cache_entries
+                .into_iter()
+                .map(|c| convert_message(c, settings.api_type)),
+        );
+        messages.extend(
+            sublime_inputs
+                .into_iter()
+                .map(|c| convert_message(c, settings.api_type)),
+        );
+
+        messages.sort_by_key(|m| m.weight());
+
+        Self {
+            messages,
+            stream: settings.stream,
+            chat_model: settings.chat_model,
+            advertisement: settings.advertisement,
+            temperature: settings.temperature,
+            max_tokens: settings.max_tokens,
+            max_completion_tokens: settings.max_completion_tokens,
+            reasoning: if let Some(effor) = settings.reasoning_effort {
+                Some(Reason::new(effor))
+            } else {
+                None
+            },
+            top_p: settings.top_p,
+            frequency_penalty: settings.frequency_penalty,
+            presence_penalty: settings.presence_penalty,
+            tools: if settings
+                .tools
+                .unwrap_or(false)
+            {
+                Some(
+                    OPENAI_DEFINED
+                        .iter()
+                        .map(|tool| tool.as_ref().clone())
+                        .collect::<Vec<Tool>>(),
+                )
+            } else {
+                None
+            },
+            parallel_tool_calls: settings.parallel_tool_calls,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[allow(unused)]
 pub struct OpenAICompletionRequest {
     pub(crate) input: Vec<OpenAIRequestMessage>,
 
@@ -134,8 +261,8 @@ impl OpenAICompletionRequest {
         settings: AssistantSettings,
         cache_entries: Vec<CacheEntry>,
         sublime_inputs: Vec<SublimeInputContent>,
-    ) -> OpenAICompletionRequest {
-        let mut messages = Vec::new();
+    ) -> Self {
+        let mut input = Vec::new();
 
         if let Some(system_message) = settings.assistant_role {
             let content = {
@@ -155,11 +282,11 @@ impl OpenAICompletionRequest {
             };
 
             if dbg!(settings.api_type) == ApiType::OpenAi {
-                messages.push(OpenAIRequestMessage::OpenAIMessage(
+                input.push(OpenAIRequestMessage::OpenAIMessage(
                     OpenAIMessage::from_system(content),
                 ))
             } else if settings.api_type == ApiType::PlainText {
-                messages.push(
+                input.push(
                     OpenAIRequestMessage::OpenAIPlainTextMessage(OpenAIPlainTextMessage::from_system(
                         content,
                     )),
@@ -167,21 +294,21 @@ impl OpenAICompletionRequest {
             }
         }
 
-        messages.extend(
+        input.extend(
             cache_entries
                 .into_iter()
                 .map(|c| convert_message(c, settings.api_type)),
         );
-        messages.extend(
+        input.extend(
             sublime_inputs
                 .into_iter()
                 .map(|c| convert_message(c, settings.api_type)),
         );
 
-        messages.sort_by_key(|m| m.weight());
+        input.sort_by_key(|m| m.weight());
 
-        OpenAICompletionRequest {
-            input: messages,
+        Self {
+            input,
             stream: settings.stream,
             chat_model: settings.chat_model,
             advertisement: settings.advertisement,
@@ -493,6 +620,7 @@ pub enum Roles {
 pub enum OpenAIMessageType {
     OutputText,
     InputText,
+    Text,
     ImageUrl,
     InputAudio,
 }
@@ -707,11 +835,68 @@ mod tests {
 
     #[test]
     fn test_openai_request_serialization_simple() {
-        let request = OpenAICompletionRequest {
-            input: vec![OpenAIRequestMessage::OpenAIMessage(
+        let request = OldFashionCompletionRequest {
+            messages: vec![OpenAIRequestMessage::OpenAIMessage(
                 OpenAIMessage {
                     content: vec![MessageContent {
                         r#type: OpenAIMessageType::InputText,
+                        content: ContentWrapper::Text("Hello, world!".to_string()),
+                    }]
+                    .into(),
+                    role: Roles::User,
+                    tool_call_id: None,
+                    name: Some("test".to_string()),
+                    tool_calls: None,
+                    kind: MessageKind::UserCommand,
+                },
+            )],
+            stream: false,
+            chat_model: "gpt-3.5-turbo".to_string(),
+            advertisement: false,
+            temperature: Some(0.0),
+            max_tokens: None,
+            max_completion_tokens: Some(100),
+            top_p: Some(1.0),
+            frequency_penalty: None,
+            presence_penalty: Some(0.0),
+            tools: None,
+            parallel_tool_calls: None,
+            reasoning: None,
+        };
+
+        let serialized = serde_json::to_string(&request).unwrap();
+        let expected = json!({
+            "messages": [
+                {
+                    "content": [
+                        {
+                            "text": "Hello, world!",
+                            "type": "input_text"
+                        }
+                    ],
+                    "role": "user",
+                    "name": "test"
+                }
+            ],
+            "stream": false,
+            "model": "gpt-3.5-turbo",
+            "temperature": 0.0,
+            "max_completion_tokens": 100,
+            "top_p": 1.0,
+            "presence_penalty": 0.0
+        });
+
+        let serialized_json: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(serialized_json, expected);
+    }
+
+    #[test]
+    fn test_plain_text_request_serialization_simple() {
+        let request = OldFashionCompletionRequest {
+            messages: vec![OpenAIRequestMessage::OpenAIMessage(
+                OpenAIMessage {
+                    content: vec![MessageContent {
+                        r#type: OpenAIMessageType::Text,
                         content: ContentWrapper::Text("Hello, world!".to_string()),
                     }]
                     .into(),
@@ -789,7 +974,149 @@ mod tests {
                 }),
                 OpenAIRequestMessage::OpenAIMessage(OpenAIMessage {
                     content: vec![MessageContent {
-                        r#type: OpenAIMessageType::InputText,
+                        r#type: OpenAIMessageType::OutputText,
+                        content: ContentWrapper::Text("This is the assistant speaking.".to_string()),
+                    }]
+                    .into(),
+                    role: Roles::Assistant,
+                    tool_call_id: None,
+                    name: Some("assistant".to_string()),
+                    tool_calls: None,
+                    kind: MessageKind::UserCommand,
+                }),
+            ],
+            stream: true,
+            chat_model: "gpt-4o".to_string(),
+            advertisement: true,
+            temperature: Some(0.7),
+            max_tokens: Some(150),
+            max_completion_tokens: Some(100),
+            top_p: Some(0.9),
+            frequency_penalty: Some(0.8),
+            presence_penalty: Some(0.3),
+            tools: Some(vec![Tool {
+                r#type: "function".to_string(),
+                function: Some(FunctionToCall {
+                    name: "create_file".to_string(),
+                    description: Some(
+                        "Create a new file with the specified content at the given path.".to_string(),
+                    ),
+                    parameters: json!({
+                        "properties": {
+                            "file_path": {
+                                "type": "string",
+                                "description": "The path where the file will be created."
+                            }
+                        },
+                        "type": "object",
+                        "required": ["file_path"],
+                        "additionalProperties": false
+                    })
+                    .as_object()
+                    .cloned(),
+                    strict: Some(true),
+                }),
+                search_context_size: None,
+            }]),
+
+            parallel_tool_calls: Some(false),
+            reasoning: None,
+        };
+
+        let serialized = serde_json::to_string(&request).unwrap();
+        let expected = json!({
+            "input": [
+                {
+                    "content": [
+                        {
+                            "text": "Tell me a story.",
+                            "type": "input_text"
+                        },
+                        {
+                            "image_url": {
+                                "url": "http://example.com/image1",
+                                "detail": "Sample image"
+                            },
+                            "type": "image_url"
+                        }
+                    ],
+                    "role": "user",
+                    "tool_call_id": "001",
+                    "name": "test_user"
+                },
+                {
+                    "content": [
+                        {
+                            "text": "This is the assistant speaking.",
+                            "type": "output_text"
+                        }
+                    ],
+                    "role": "assistant",
+                    "name": "assistant"
+                }
+            ],
+            "stream": true,
+            "model": "gpt-4o",
+            "temperature": 0.7,
+            "max_tokens": 150,
+            "max_completion_tokens": 100,
+            "top_p": 0.9,
+            "frequency_penalty": 0.8,
+            "presence_penalty": 0.3,
+            "tools": [json!({
+                "type": "function",
+                "function": {
+                    "name": "create_file",
+                    "parameters": {
+                        "properties": {
+                            "file_path": {
+                                "type": "string",
+                                "description": "The path where the file will be created."
+                            }
+                        },
+                        "type": "object",
+                        "required": ["file_path"],
+                        "additionalProperties": false
+                    },
+                    "description": "Create a new file with the specified content at the given path.",
+                    "strict": true
+                }
+            })],
+            "parallel_tool_calls": false
+        });
+
+        let serialized_json: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(serialized_json, expected);
+    }
+
+    #[test]
+    fn test_plain_text_request_serialization_full() {
+        let request = OldFashionCompletionRequest {
+            messages: vec![
+                OpenAIRequestMessage::OpenAIMessage(OpenAIMessage {
+                    content: vec![
+                        MessageContent {
+                            r#type: OpenAIMessageType::Text,
+                            content: ContentWrapper::Text("Tell me a story.".to_string()),
+                        },
+                        MessageContent {
+                            r#type: OpenAIMessageType::ImageUrl,
+                            content: ContentWrapper::ImageUrl(ImageContent {
+                                url: "http://example.com/image1".to_string(),
+                                detail: Some("Sample image".to_string()),
+                            }),
+                        },
+                    ]
+                    .into(),
+                    role: Roles::User,
+                    tool_call_id: Some("001".to_string()),
+                    name: Some("test_user".to_string()),
+                    tool_calls: None,
+                    kind: MessageKind::UserCommand,
+                }),
+                OpenAIRequestMessage::OpenAIMessage(OpenAIMessage {
+                    content: vec![MessageContent {
+                        r#type: OpenAIMessageType::Text,
                         content: ContentWrapper::Text("This is the assistant speaking.".to_string()),
                     }]
                     .into(),
@@ -924,6 +1251,35 @@ mod tests {
 
         let serialized = serde_json::to_string(&request).unwrap();
         let expected = json!({
+            "input": [],
+            "model": "gpt-4o",
+            "stream": false
+        });
+
+        let serialized_json: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(serialized_json, expected);
+    }
+
+    #[test]
+    fn test_plain_text_request_serialization_minimal() {
+        let request = OldFashionCompletionRequest {
+            messages: vec![],
+            stream: false,
+            chat_model: "gpt-4o".to_string(),
+            advertisement: false,
+            temperature: None,
+            max_tokens: None,
+            max_completion_tokens: None,
+            top_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            tools: None,
+            parallel_tool_calls: None,
+            reasoning: None,
+        };
+
+        let serialized = serde_json::to_string(&request).unwrap();
+        let expected = json!({
             "messages": [],
             "model": "gpt-4o",
             "stream": false
@@ -1027,7 +1383,7 @@ mod tests {
     fn test_openai_message_serialization_with_multiple_types_no_deserialization() {
         let message_content = vec![
             MessageContent {
-                r#type: OpenAIMessageType::InputText,
+                r#type: OpenAIMessageType::Text,
                 content: ContentWrapper::Text("Text string".to_string()),
             },
             MessageContent {

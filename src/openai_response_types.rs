@@ -1,14 +1,7 @@
-use anyhow::Result;
-use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
-use strum_macros::{Display, EnumString};
+use serde_json::Value;
 
-use crate::{
-    openai_network_types::OpenAIMessageType,
-    tools_definition::{FUNCTIONS, OPENAI_DEFINED},
-    types::{ApiType, AssistantSettings, CacheEntry, InputKind, Reason, ReasonEffort, SublimeInputContent},
-};
+use crate::openai_network_types::OpenAIMessageType;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ResponsesResponse {

@@ -18,7 +18,7 @@ pub enum FunctionName {
     ReadRegionContent,
     GetWorkingDirectoryContent,
 }
-
+#[allow(dead_code)]
 pub static FUNCTIONS: Lazy<Vec<Arc<Tool>>> = Lazy::new(|| {
     vec![
         // Arc::new((*CREATE_FILE).clone()),

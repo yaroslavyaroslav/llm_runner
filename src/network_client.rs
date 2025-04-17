@@ -26,13 +26,14 @@ use tokio::{
 use crate::{
     openai_network_types::{
         ErrorResponse,
+        OldFashionCompletionRequest,
         OpenAICompletionRequest,
         OpenAIErrorContainer,
         OpenAIMessageType,
         OtherErrorContainer,
     },
     openai_response_types::{Content, Message, ResponsesResponse},
-    types::{AssistantSettings, CacheEntry, SublimeInputContent},
+    types::{ApiType, AssistantSettings, CacheEntry, SublimeInputContent},
 };
 
 #[derive(Clone)]
@@ -77,15 +78,24 @@ impl NetworkClient {
         cache_entries: Vec<CacheEntry>,
         sublime_inputs: Vec<SublimeInputContent>,
     ) -> Result<String> {
-        let internal_messages = OpenAICompletionRequest::create_openai_completion_request(
-            settings,
-            cache_entries,
-            sublime_inputs,
-        );
+        let return_string;
+        if settings.api_type == ApiType::OpenAi {
+            let internal_messages = OpenAICompletionRequest::create_openai_completion_request(
+                settings,
+                cache_entries,
+                sublime_inputs,
+            );
+            return_string = serde_json::to_string(&internal_messages)?;
+        } else {
+            let internal_messages = OldFashionCompletionRequest::create_openai_completion_request(
+                settings,
+                cache_entries,
+                sublime_inputs,
+            );
+            return_string = serde_json::to_string(&internal_messages)?;
+        }
 
-        Ok(serde_json::to_string(
-            &internal_messages,
-        )?)
+        Ok(return_string)
     }
 
     pub(crate) fn prepare_request(
@@ -135,13 +145,8 @@ impl NetworkClient {
                     .eventsource();
 
                 loop {
-                    match timeout(
-                        Duration::from_secs(self.timeout as u64),
-                        stream.next(),
-                    )
-                    .await
-                    {
-                        Ok(Some(Ok(event))) => {
+                    match stream.next().await {
+                        Some(Ok(event)) => {
                             if event.event == "response.output_text.delta" {
                                 let cloned_sender = Arc::clone(&sender);
 
@@ -152,14 +157,6 @@ impl NetworkClient {
                                     .and_then(|o| o.get("delta"))
                                     .and_then(|delta| delta.as_str())
                                     .unwrap();
-
-                                // debug!(
-                                //     "received json: {:?}",
-                                //     event
-                                //         .data
-                                //         .get("delta")
-                                //         .unwrap()
-                                // );
 
                                 composed_text += content;
 
@@ -173,40 +170,26 @@ impl NetworkClient {
                                 break;
                             }
                         }
-                        Ok(Some(Err(e))) => {
+                        Some(Err(e)) => {
                             debug!("Error of accessing event: {:?}", e);
                             break;
                         }
-                        Ok(None) => {
-                            // Stream is exhausted
+                        None => {
                             debug!("Stream is exhausted");
                             break;
                         }
-                        Err(_) => {
-                            // Timeout exceeded
-                            debug!("Stream is stalled");
-                            let cloned_sender = Arc::clone(&sender);
-
-                            cloned_sender
-                                .lock()
-                                .await
-                                .send("\n[STALLED]".to_string())
-                                .await
-                                .ok();
-                            break; // fuckers from together can stall stream for more than 10 secs for R1
-                        }
                     }
-                }
+                    if cancel_flag.load(Ordering::SeqCst) {
+                        let cloned_sender = Arc::clone(&sender);
 
-                if cancel_flag.load(Ordering::SeqCst) {
-                    let cloned_sender = Arc::clone(&sender);
-
-                    cloned_sender
-                        .lock()
-                        .await
-                        .send("\n[ABORTED]".to_string())
-                        .await
-                        .ok();
+                        cloned_sender
+                            .lock()
+                            .await
+                            .send("\n[ABORTED]".to_string())
+                            .await
+                            .ok();
+                        break;
+                    }
                 }
 
                 drop(sender);
@@ -714,7 +697,7 @@ mod tests {
     }
 
     #[test]
-    async fn test_prepare_payload() {
+    async fn test_prepare_openai_responses_payload() {
         let client = NetworkClient::new(None, 10);
         let mut settings = AssistantSettings::default();
 
@@ -735,14 +718,49 @@ mod tests {
 
         let payload_json: serde_json::Value = serde_json::from_str(&payload).unwrap();
         let expected_payload = serde_json::json!({
-            "messages": [
+            "input": [
                 {
                     "content": [
                         {
                             "text": "content",
-                            "type": "text",
+                            "type": "input_text",
                         }
                     ],
+                    "role": "user",
+                }
+            ],
+            "stream": true,
+            "model": "gpt-4o-mini",
+        });
+
+        assert_eq!(payload_json, expected_payload);
+    }
+
+    #[test]
+    async fn test_prepare_plain_text_payload() {
+        let client = NetworkClient::new(None, 10);
+        let mut settings = AssistantSettings::default();
+
+        settings.api_type = ApiType::PlainText;
+
+        let cache_entries = vec![];
+        let sublime_inputs = vec![SublimeInputContent {
+            content: Some("content".to_string()),
+            path: None,
+            scope: None,
+            input_kind: InputKind::ViewSelection,
+            tool_id: None,
+        }];
+
+        let payload = client
+            .prepare_payload(settings, cache_entries, sublime_inputs)
+            .unwrap();
+
+        let payload_json: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        let expected_payload = serde_json::json!({
+            "messages": [
+                {
+                    "content": "content",
                     "role": "user",
                 }
             ],

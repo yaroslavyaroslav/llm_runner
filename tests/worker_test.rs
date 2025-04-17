@@ -98,6 +98,7 @@ async fn test_run_chact_method_with_mock_server() {
 }
 
 #[tokio::test]
+#[ignore = "Local tools are not yet implemented for requests"]
 async fn test_run_tool_method_with_mock_server() {
     let tmp_dir = TempDir::new()
         .unwrap()

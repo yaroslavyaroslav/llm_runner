@@ -10,7 +10,7 @@ use crate::openai_network_types::{FunctionToCall, Tool};
 #[strum(serialize_all = "snake_case")]
 pub enum FunctionName {
     CreateFile,
-    ReplaceTextWithAnotherText,
+    ApplyPatch,
     ReplaceTextForWholeFile,
     ReadRegionContent,
     GetWorkingDirectoryContent,
@@ -20,7 +20,7 @@ pub static FUNCTIONS: Lazy<Vec<Arc<Tool>>> = Lazy::new(|| {
     vec![
         // Arc::new((*CREATE_FILE).clone()),
         Arc::new((*REPLACE_TEXT_FOR_WHOLE_FILE).clone()),
-        Arc::new((*REPLACE_TEXT_WITH_ANOTHER_TEXT).clone()),
+        Arc::new((*APPLY_PATCH).clone()),
         Arc::new((*READ_REGION_CONTENT).clone()),
         Arc::new((*GET_WORKING_DIRECTORY_CONTENT).clone()),
     ]
@@ -51,30 +51,39 @@ pub static CREATE_FILE: Lazy<Tool> = Lazy::new(|| {
     }
 });
 
-pub static REPLACE_TEXT_WITH_ANOTHER_TEXT: Lazy<Tool> = Lazy::new(|| {
+pub static APPLY_PATCH: Lazy<Tool> = Lazy::new(|| {
     Tool {
         r#type: "function".to_string(),
         function: Some(FunctionToCall {
-            name: FunctionName::ReplaceTextWithAnotherText.to_string(),
-            description: Some("Replace the matched content with the new one provided".to_string()),
+            name: FunctionName::ApplyPatch.to_string(),
+            description: Some(
+                r#"Apply a patch to the given file.
+                You must embed the file path in the patch itself:
+
+                *** Begin Patch
+                *** Update File: path/to/file.source
+                - old line to replace
+                + new replacement line
+                *** End Patch
+
+                Processing:
+                1. Strip the Begin/End markers and extract the file path.
+                2. Run simple find-and-replace for each `- old` → `+ new` pair.
+
+                Returns `"Done!"` on success or an error message on failure.
+                "#
+                .to_string(),
+            ),
             parameters: json!({
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "The path of the file where content to search is stored",
-                    },
-                    "old_content": {
-                        "type": "string",
-                        "description": "The existing content to be replaced with new content",
-                    },
-                    "new_content": {
-                        "type": "string",
-                        "description": "The content to replace the old one",
-                    },
-                },
                 "type": "object",
-                "required": ["file_path", "old_content", "new_content"],
-                "additionalProperties": false,
+                "properties": {
+                    "patch": {
+                        "type": "string",
+                        "description": "Your patch block including ***Begin/End and Update File header."
+                    }
+                },
+                "required": ["patch"],
+                "additionalProperties": false
             })
             .as_object()
             .cloned(),

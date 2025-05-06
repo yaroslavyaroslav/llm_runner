@@ -112,6 +112,14 @@ impl CacheEntry {
                 thinking_part.map(|s| s.to_string())
             })
     }
+
+    pub(crate) fn combined_content(&self) -> String {
+        match (&self.path, &self.content) {
+            (Some(path), Some(content)) => format!("Path: `{}`\n{}", path, content),
+            (None, Some(content)) => content.clone(),
+            (..) => "".to_string(),
+        }
+    }
 }
 
 #[pyclass(eq, eq_int)]
@@ -148,6 +156,9 @@ pub struct SublimeOutputContent {
 
     #[pyo3(get)]
     pub role: Roles,
+
+    #[pyo3(get)]
+    pub path: Option<String>,
 }
 
 impl From<&CacheEntry> for SublimeOutputContent {
@@ -166,6 +177,7 @@ impl From<&CacheEntry> for SublimeOutputContent {
         SublimeOutputContent {
             content: output_contnt,
             role: content.role,
+            path: content.path.clone(),
         }
     }
 }
@@ -204,6 +216,14 @@ impl SublimeInputContent {
             scope,
             input_kind,
             tool_id: None,
+        }
+    }
+
+    pub(crate) fn combined_content(&self) -> String {
+        match (&self.path, &self.content) {
+            (Some(path), Some(content)) => format!("Path: `{}`\n{}", path, content),
+            (None, Some(content)) => content.clone(),
+            (..) => "".to_string(),
         }
     }
 }
@@ -389,6 +409,10 @@ impl AssistantSettings {
         }
 
         default
+    }
+
+    pub fn deep_copy(&self) -> Self {
+        self.clone() // This will use the derived Clone implementation
     }
 }
 

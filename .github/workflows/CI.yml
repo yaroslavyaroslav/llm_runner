@@ -33,6 +33,48 @@ jobs:
 
       - name: Run Unit Tests
         run: cargo test --verbose
+  linux:
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - runner: ubuntu-22.04
+            target: x86_64
+          - runner: ubuntu-22.04
+            target: aarch64
+          - runner: ubuntu-22.04
+            target: armv7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.x
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          args: --release --out dist --find-interpreter
+          sccache: 'true'
+          manylinux: auto
+          before-script-linux: |
+            case "${{ matrix.platform.target }}" in
+              "aarch64" | "armv7" | "s390x" | "ppc64le")
+                # NOTE: pypa/manylinux docker images are Debian based
+                sudo apt-get update
+                sudo apt-get install -y pkg-config librust-openssl-sys-dev
+                ;;
+              "x86" | "x86_64")
+                # NOTE: rust-cross/manylinux docker images are CentOS based
+                yum update -y
+                yum install -y openssl openssl-devel perl-IPC-Cmd
+                ;;
+            esac
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-${{ matrix.platform.target }}
+          path: dist
 
   musllinux:
     runs-on: ${{ matrix.platform.runner }}
@@ -141,7 +183,7 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
-    needs: [linux-tests, musllinux, windows, macos, sdist]
+    needs: [linux-tests, linux, musllinux, windows, macos, sdist]
     permissions:
       # Use to sign the release artifacts
       id-token: write
@@ -156,7 +198,7 @@ jobs:
         with:
           subject-path: 'wheels-*/*'
       - name: Publish to PyPI
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        if: github.repository == 'yaroslavyaroslav/llm_runner' && ${{ startsWith(github.ref, 'refs/tags/') }}
         uses: PyO3/maturin-action@v1
         env:
           MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}

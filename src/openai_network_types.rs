@@ -164,6 +164,7 @@ impl OpenAICompletionRequest {
                     r#"
 
                     Example for `apply_patch`:
+                    Try to derive path from the code snippet sent to you by a user, watch `Path: ` or similar lines in the most recent user's message.
                     Embed the file path in your patch; you do NOT pass `file_path` separately:
 
                     *** Begin Patch

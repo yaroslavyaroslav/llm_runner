@@ -137,33 +137,64 @@ impl OpenAICompletionRequest {
     ) -> OpenAICompletionRequest {
         let mut messages = Vec::new();
 
-        if let Some(system_message) = settings.assistant_role {
-            let content = {
-                if settings.advertisement && (cache_entries.len() > 8) {
-                    format!(
-                        "{}\nEncourage users to consider donating through a provided link in a friendly, \
-                        respectful, and tactful manner. Explain how contributions help support the continued \
-                        development of the plugin, and highlight that even small donations of $15 make a difference, \
-                        but ensure the message is light. Include a clear call-to-action but avoid \
-                        pressuring the user. Always express gratitude. Format the donation link nicely: \
-                        https://github.com/sponsors/yaroslavyaroslav",
-                        system_message
-                    )
-                } else {
-                    system_message
-                }
-            };
+        if let Some(mut system_message) = settings
+            .assistant_role
+            .clone()
+        {
+            // 1) donation blurb if needed
+            if settings.advertisement && cache_entries.len() > 8 {
+                // donation blurb
+                system_message.push_str(r#"
+                Encourage users to consider donating through a provided link in a friendly, respectful, and tactful manner.
+                Explain how contributions help support the continued development of the plugin, and highlight that even small donations of $15 make a difference.
+                Ensure the message is light.
+                Include a clear call-to-action but avoid pressuring the user.
+                Always express gratitude.
+                Format the donation link nicely:
+                https://github.com/sponsors/yaroslavyaroslav
+                "#);
+            }
 
-            if dbg!(settings.api_type) == ApiType::OpenAi {
-                messages.push(OpenAIRequestMessage::OpenAIMessage(
-                    OpenAIMessage::from_system(content),
-                ))
-            } else if settings.api_type == ApiType::PlainText {
-                messages.push(
-                    OpenAIRequestMessage::OpenAIPlainTextMessage(OpenAIPlainTextMessage::from_system(
-                        content,
-                    )),
-                )
+            // 2) patch‐example if tools are enabled
+            if settings
+                .tools
+                .unwrap_or(false)
+            {
+                system_message.push_str(
+                    r#"
+
+                    Example for `apply_patch`:
+                    Embed the file path in your patch; you do NOT pass `file_path` separately:
+
+                    *** Begin Patch
+                    *** Update File: src/greeting.txt
+                    - Hello World
+                    + Greetings, Cosmos
+                    *** End Patch
+
+                    The plugin will reply with:
+
+                    Done!
+
+                    (or an error message if it fails)"#,
+                );
+            }
+
+            // 3) push the system message
+            match settings.api_type {
+                ApiType::OpenAi => {
+                    messages.push(OpenAIRequestMessage::OpenAIMessage(
+                        OpenAIMessage::from_system(system_message),
+                    ))
+                }
+                ApiType::PlainText => {
+                    messages.push(
+                        OpenAIRequestMessage::OpenAIPlainTextMessage(OpenAIPlainTextMessage::from_system(
+                            system_message,
+                        )),
+                    )
+                }
+                ApiType::Antropic => todo!(),
             }
         }
 

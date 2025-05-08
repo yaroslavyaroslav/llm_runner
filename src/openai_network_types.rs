@@ -319,10 +319,10 @@ impl OpenAIMessage {
 
 impl From<CacheEntry> for OpenAIMessage {
     fn from(value: CacheEntry) -> Self {
-        OpenAIMessage {
-            content: value
-                .content
-                .map(|c| vec![MessageContent::from_text(c)]),
+        Self {
+            content: Some(vec![MessageContent::from_text(
+                value.combined_content(),
+            )]),
             role: value.role,
             tool_call_id: value.tool_call_id,
             name: None,
@@ -335,9 +335,9 @@ impl From<CacheEntry> for OpenAIMessage {
 impl From<SublimeInputContent> for OpenAIMessage {
     fn from(value: SublimeInputContent) -> Self {
         Self {
-            content: value
-                .content
-                .map(|c| vec![MessageContent::from_text(c)]),
+            content: Some(vec![MessageContent::from_text(
+                value.combined_content(),
+            )]),
             role: if value.tool_id.is_some() { Roles::Tool } else { Roles::User },
             tool_call_id: value.tool_id,
             name: None,

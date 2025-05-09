@@ -158,26 +158,29 @@ pub static READ_REGION_CONTENT: Lazy<Tool> = Lazy::new(|| {
         r#type: "function".to_string(),
         function: Some(FunctionToCall {
             name: FunctionName::ReadRegionContent.to_string(),
-            description: Some("Read the content of the particular region".to_string()),
+            description: Some(r#"
+            Read a region of a file by specifying start/end line numbers.
+            Prefer reading large files in smaller chunks by narrowing the range.
+            Only use a = -1 and b = -1 to fetch the entire file as a last resort."#.to_string()),
             parameters: json!({
-            "type": "object",
-            "properties": {
-                "file_path": {
-                    "type": "string",
-                    "description": "The path of the file where content to search is stored",
-                },
-                "region": {
-                    "type": "object",
-                    "description": "The region in the file to read",
-                    "properties": {
-                        "a": {
-                            "type": "integer",
-                            "description": "The beginning point of the region to read, set -1 to read the file till the start",
-                        },
-                        "b": {
-                            "type": "integer",
-                            "description": "The ending point of the region to read, set -1 to read the file till the end",
-                        },
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "The path of the file to read",
+                    },
+                    "region": {
+                        "type": "object",
+                        "description": "Line range to read: specify `a` and `b` as start/end line indices, inclusive",
+                        "properties": {
+                            "a": {
+                                "type": "integer",
+                                "description": "Start line index (inclusive). Use -1 to start from the beginning of the file.",
+                            },
+                            "b": {
+                                "type": "integer",
+                                "description": "End line index (inclusive). Use -1 to read to the end of the file.",
+                            },
                     },
                     "required": ["a", "b"],
                     "additionalProperties": false,

@@ -163,21 +163,67 @@ impl OpenAICompletionRequest {
                 system_message.push_str(
                     r#"
 
-                    Example for `apply_patch`:
-                    Try to derive path from the code snippet sent to you by a user, watch `Path: ` or similar lines in the most recent user's message.
-                    Embed the file path in your patch; you do NOT pass `file_path` separately:
+                    Example for `apply_patch` tool:
+                    This tool understands ONLY a *minimal* diff format:
 
+                      - NO `@@` / line-number headers or `index` lines.
+                      - Each **hunk** MUST start with one or more `-` lines that exactly match
+                        existing text in the target file (this is the context to search for).
+                      - `+` lines that immediately follow the `-` block form the replacement.
+                        If there are no `+` lines, the hunk is a pure deletion.
+                      - Separate multiple hunks with **at least one blank line**.
+
+                    Embed the file path right after `*** Update File:` and wrap the whole thing
+                    between `*** Begin Patch` / `*** End Patch` markers.
+
+                    Examples (all of them are accepted by the current implementation):
+
+                    1) Simple in-place replacement
+
+                    ```
                     *** Begin Patch
-                    *** Update File: src/greeting.txt
-                    - Hello World
-                    + Greetings, Cosmos
+                    *** Update File: src/main.py
+                    -print("foo")
+                    +print("bar")
                     *** End Patch
+                    ```
 
-                    The plugin will reply with:
+                    2) Multi-hunk patch (note the blank line between hunks)
 
-                    Done!
+                    ```
+                    *** Begin Patch
+                    *** Update File: src/main.py
+                    -print("foo")
+                    +print("foo bar")
 
-                    (or an error message if it fails)"#,
+                    -print("baz")
+                    +print("baz qux")
+                    *** End Patch
+                    ```
+
+                    3) Prepending a header by replacing the first line (every hunk still starts
+                       with a `-` line):
+
+                    ```
+                    *** Begin Patch
+                    *** Update File: README.md
+                    -# Old Title
+                    +# My Project
+                    +# Old Title
+                    *** End Patch
+                    ```
+
+                    4) Pure deletion (no `+` lines):
+
+                    ```
+                    *** Begin Patch
+                    *** Update File: src/config.py
+                    -unwanted_setting = True
+                    *** End Patch
+                    ```
+
+                    The plugin replies with `Done!` on success or a descriptive error otherwise.
+                    "#,
                 );
             }
 

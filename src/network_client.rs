@@ -485,9 +485,10 @@ impl NetworkClient {
                 .and_then(|first_item| first_item.get("function"))
                 .and_then(|function| function.get("name"))
             {
+                // Prefix tool/function name with dash and newline
                 return function_name
                     .as_str()
-                    .map(|s| s.to_string());
+                    .map(|s| format!("- {}\n", s));
             }
         }
 

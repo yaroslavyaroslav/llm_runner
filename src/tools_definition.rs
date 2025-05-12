@@ -178,8 +178,10 @@ pub static GET_WORKING_DIRECTORY_CONTENT: Lazy<Tool> = Lazy::new(|| {
         function: Some(FunctionToCall {
             name: FunctionName::GetWorkingDirectoryContent.to_string(),
             description: Some(
-                "Get complete structure of directories and files within the working directory, current dir \
-                 is a working dir, i.e. `.` is the roor project"
+                r#"Recursively list files and directories in `ls -R` style,
+                respecting .gitignore rules.
+                Top-level directory is listed as `.:`, subdirectories as `./path:` sections.
+                Returns the output as a single text block."#
                     .to_string(),
             ),
             parameters: json!({
@@ -187,7 +189,7 @@ pub static GET_WORKING_DIRECTORY_CONTENT: Lazy<Tool> = Lazy::new(|| {
                 "properties": {
                     "directory_path": {
                         "type": "string",
-                        "description": "The path of the directory where content to search is stored",
+                        "description": "The path of the directory to list (use `.` for project root).",
                     },
                 },
                 "required": ["directory_path"],

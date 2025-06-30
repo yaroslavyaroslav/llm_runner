@@ -6,7 +6,7 @@ use tokio::sync::{mpsc::Sender, Mutex};
 use crate::{
     cacher::Cacher,
     network_client::NetworkClient,
-    openai_network_types::{OpenAIResponse, ToolCall},
+    openai_network_types::{CreateCompletionResponse, ToolCall, AssistantMessage, Roles},
     types::{AssistantSettings, CacheEntry, InputKind, SublimeInputContent},
 };
 
@@ -53,7 +53,7 @@ impl LlmRunner {
 
         // TODO: To make type to cast conditional to support various of protocols
         let result = provider
-            .execute_request::<OpenAIResponse>(
+            .execute_request::<CreateCompletionResponse>(
                 request,
                 Arc::clone(&sender),
                 Arc::clone(&cancel_flag),
@@ -61,31 +61,32 @@ impl LlmRunner {
             )
             .await;
 
-        if let Some(tool_calls) = result
+        if let Some(tool_calls_text) = result
             .as_ref()
             .ok()
             .and_then(|r| {
                 r.choices
                     .first()?
-                    .message
-                    .tool_calls
+                    .text
                     .clone()
             })
         {
             if let Ok(ref message) = result {
+                let assistant_message = AssistantMessage {
+                    role: Roles::Assistant,
+                    content: Some(tool_calls_text.clone()),
+                    tool_calls: None,
+                };
                 cacher
                     .lock()
                     .await
-                    .write_entry(&CacheEntry::from(
-                        message.clone().choices[0]
-                            .message
-                            .clone(),
-                    ))
+                    .write_entry(&CacheEntry::from(assistant_message))
                     .ok();
             }
 
+            // TODO: Parse tool_calls from tool_calls_text if needed
             let content = LlmRunner::handle_function_call(
-                tool_calls,
+                Vec::new(), // placeholder, parse from text if needed
                 Arc::clone(&function_handler),
             );
 
@@ -101,14 +102,16 @@ impl LlmRunner {
             ))
             .await
         } else if store {
+            let text = result?.choices[0].text.clone();
+            let assistant_message = AssistantMessage {
+                role: Roles::Assistant,
+                content: text,
+                tool_calls: None,
+            };
             cacher
                 .lock()
                 .await
-                .write_entry(&CacheEntry::from(
-                    result?.choices[0]
-                        .message
-                        .clone(),
-                ))
+                .write_entry(&CacheEntry::from(assistant_message))
         } else {
             result.map(|_| ())
         }

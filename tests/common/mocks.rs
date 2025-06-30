@@ -25,6 +25,7 @@ impl Respond for SequentialResponder {
                     "model": "some_model",
                     "id": "some_id",
                     "created": 367123,
+                    "object": "chat.completion",
                     "choices": [{
                         "index": 0,
                         "message": {
@@ -50,6 +51,7 @@ impl Respond for SequentialResponder {
                     "model": "some_model",
                     "id": "some_id",
                     "created": 367123,
+                    "object": "chat.completion",
                     "choices": [{
                         "index": 0,
                         "message": {

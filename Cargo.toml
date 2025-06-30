@@ -21,6 +21,7 @@ fern = "0.7"
 log = "0.4"
 eventsource-stream = "0.2"
 regex = "1.11"
+openai_models = { path = "generated/openai" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 openssl = { version = "0.10", features = ["vendored"] }

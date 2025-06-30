@@ -46,6 +46,7 @@ async fn test_run_chact_method_with_mock_server() {
                 "model": "some_model",
                 "id": "some_id",
                 "created": 367123,
+                "object": "chat.completion",
                 "choices": [{
                     "index": 0,
                     "message": {
@@ -256,6 +257,7 @@ async fn test_error_handler_not_called_on_success() {
         .and(path(endpoint))
         .respond_with(
             ResponseTemplate::new(200).set_body_json(json!({
+                "object": "chat.completion",
                 "model": "some_model",
                 "id": "some_id",
                 "created": 367123,

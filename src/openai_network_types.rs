@@ -3,6 +3,8 @@ use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use strum_macros::{Display, EnumString};
+pub use openai_models::models::create_completion_request::CreateCompletionRequest;
+pub use openai_models::models::create_completion_response::CreateCompletionResponse;
 
 use crate::{
     tools_definition::FUNCTIONS,
@@ -1222,7 +1224,7 @@ mod tests {
     {"role": "user", "content": [{"type": "text", "text": "What is the weather today?"}], "path": null, "scope_name": null, "tool_call_id": null, "name": "UserMessage"}
         "#;
 
-        // A helper that “parses” a JSON-line by simply checking for the assistant role.
+        // A helper that "parses" a JSON-line by simply checking for the assistant role.
         // In a real scenario, this would be your custom parser.
         fn parse_message_line(line: &str) -> Box<dyn std::any::Any> {
             if line.contains("\"role\": \"assistant\"") {

@@ -33,6 +33,8 @@ use crate::{
     types::{AssistantSettings, CacheEntry, SublimeInputContent},
 };
 
+use openai_models::models::create_completion_request::CreateCompletionRequest;
+
 #[derive(Clone)]
 pub struct NetworkClient {
     client: Client,
@@ -75,15 +77,24 @@ impl NetworkClient {
         cache_entries: Vec<CacheEntry>,
         sublime_inputs: Vec<SublimeInputContent>,
     ) -> Result<String> {
-        let internal_messages = OpenAICompletionRequest::create_openai_completion_request(
-            settings,
-            cache_entries,
-            sublime_inputs,
-        );
+        // Build messages array from sublime_inputs
+        let messages = sublime_inputs.iter().map(|input| {
+            serde_json::json!({
+                "content": [
+                    { "text": input.content.clone().unwrap_or_default(), "type": "text" }
+                ],
+                "role": "user"
+            })
+        }).collect::<Vec<_>>();
 
-        Ok(serde_json::to_string(
-            &internal_messages,
-        )?)
+        // Build the payload as a serde_json::Value
+        let payload = serde_json::json!({
+            "messages": messages,
+            "stream": true,
+            "model": settings.chat_model,
+        });
+
+        Ok(payload.to_string())
     }
 
     pub(crate) fn prepare_request(

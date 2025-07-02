@@ -99,7 +99,11 @@ def test_assistant_settings_real():
 
 
 def test_python_worker_plain_run():
-    worker = Worker(window_id=101, path=PATH, proxy=os.environ.get('PROXY'))
+    proxy = os.environ.get('PROXY')
+    if proxy is not None:
+        worker = Worker(window_id=101, path=PATH, proxy=proxy)
+    else:
+        worker = Worker(window_id=101, path=PATH)
 
     some_list: List[str] = []
     error_list: List[str] = []
@@ -137,7 +141,11 @@ def test_python_worker_plain_run():
 
 
 def test_python_worker_sse_run():
-    worker = Worker(window_id=101, path=PATH, proxy=os.environ.get('PROXY'))
+    proxy = os.environ.get('PROXY')
+    if proxy is not None:
+        worker = Worker(window_id=101, path=PATH, proxy=proxy)
+    else:
+        worker = Worker(window_id=101, path=PATH)
 
     some_list: List[str] = []
     some_errors: List[str] = []
@@ -183,7 +191,11 @@ def test_python_worker_sse_run():
 
 
 def test_python_worker_sse_function_run():
-    worker = Worker(window_id=101, path=PATH, proxy=os.environ.get('PROXY'))
+    proxy = os.environ.get('PROXY')
+    if proxy is not None:
+        worker = Worker(window_id=101, path=PATH, proxy=proxy)
+    else:
+        worker = Worker(window_id=101, path=PATH)
 
     some_list: List[str] = []
     some_errors: List[str] = []
@@ -225,7 +237,11 @@ def test_python_worker_sse_function_run():
 
 @pytest.mark.asyncio
 async def test_python_worker_sse_function_run_cancel():
-    worker = Worker(window_id=101, path=PATH, proxy=os.environ.get('PROXY'))
+    proxy = os.environ.get('PROXY')
+    if proxy is not None:
+        worker = Worker(window_id=101, path=PATH, proxy=proxy)
+    else:
+        worker = Worker(window_id=101, path=PATH)
 
     contents = SublimeInputContent(
         InputKind.ViewSelection, 'This is the test request, provide me 30 words response'

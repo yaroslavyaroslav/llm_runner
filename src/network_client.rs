@@ -669,201 +669,200 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    #[ignore = "Unable to perform actual streaming with mock server"]
-    async fn test_sse_streaming() {
-        let mock_server = MockServer::start().await;
+    // #[tokio::test]
+    // #[ignore = "Unable to perform actual streaming with mock server"]
+    // async fn test_sse_streaming() {
+    //     let mock_server = MockServer::start().await;
 
-        // SSE content for testing
-        let sse_data = r#"
-        data: {"choices":[{"delta":{"content":"The","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
+    //     // SSE content for testing
+    //     let sse_data = r#"
+    //     data: {"choices":[{"delta":{"content":"The","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
 
-        data: {"choices":[{"delta":{"content":" ","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
+    //     data: {"choices":[{"delta":{"content":" ","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
 
-        data: {"choices":[{"delta":{"content":"202","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
+    //     data: {"choices":[{"delta":{"content":"202","role":"assistant","tool_calls":null},"finish_reason":null,"index":0}],"created":1734374933,"id":"cmpl-9775b1b7-0746-470e-a541-e0cc8f73bcce","model":"Llama-3.3-70B-Instruct","object":"chat.completion.chunk","usage":null}
 
-        data: [DONE]
+    //     data: [DONE]
 
+    //     "#;
+    //     let _mock = wiremock::Mock::given(method("POST"))
+    //         .and(header(
+    //             CONTENT_TYPE.as_str(),
+    //             "application/json",
+    //         ))
+    //         .respond_with(
+    //             ResponseTemplate::new(200)
+    //                 .insert_header(
+    //                     CONTENT_TYPE.as_str(),
+    //                     "text/event-stream; charset=utf-8",
+    //                 )
+    //                 .set_body_string(sse_data),
+    //         )
+    //         .mount(&mock_server)
+    //         .await;
 
-        "#;
-        let _mock = wiremock::Mock::given(method("POST"))
-            .and(header(
-                CONTENT_TYPE.as_str(),
-                "application/json",
-            ))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header(
-                        CONTENT_TYPE.as_str(),
-                        "text/event-stream; charset=utf-8",
-                    )
-                    .set_body_string(sse_data),
-            )
-            .mount(&mock_server)
-            .await;
+    //     let client = NetworkClient::new(None, 10);
+    //     let mut settings = AssistantSettings::default();
+    //     settings.url = mock_server.uri();
 
-        let client = NetworkClient::new(None, 10);
-        let mut settings = AssistantSettings::default();
-        settings.url = mock_server.uri();
+    //     let cache_entries = vec![];
+    //     let sublime_inputs = vec![SublimeInputContent {
+    //         content: Some("content".to_string()),
+    //         path: None,
+    //         scope: None,
+    //         input_kind: InputKind::ViewSelection,
+    //         tool_id: None,
+    //     }];
 
-        let cache_entries = vec![];
-        let sublime_inputs = vec![SublimeInputContent {
-            content: Some("content".to_string()),
-            path: None,
-            scope: None,
-            input_kind: InputKind::ViewSelection,
-            tool_id: None,
-        }];
+    //     let payload = client
+    //         .prepare_payload(
+    //             settings.clone(),
+    //             cache_entries,
+    //             sublime_inputs,
+    //         )
+    //         .unwrap();
 
-        let payload = client
-            .prepare_payload(
-                settings.clone(),
-                cache_entries,
-                sublime_inputs,
-            )
-            .unwrap();
+    //     let request = client
+    //         .prepare_request(settings.clone(), payload)
+    //         .unwrap();
 
-        let request = client
-            .prepare_request(settings.clone(), payload)
-            .unwrap();
+    //     let (tx, mut rx) = mpsc::channel(10);
 
-        let (tx, mut rx) = mpsc::channel(10);
+    //     let result = client
+    //         .execute_request::<Map<String, Value>>(
+    //             request,
+    //             Arc::new(Mutex::new(tx)),
+    //             Arc::new(AtomicBool::new(false)),
+    //             settings.stream,
+    //         )
+    //         .await;
 
-        let result = client
-            .execute_request::<Map<String, Value>>(
-                request,
-                Arc::new(Mutex::new(tx)),
-                Arc::new(AtomicBool::new(false)),
-                settings.stream,
-            )
-            .await;
+    //     let mut events = vec![];
+    //     while let Some(data) = rx.recv().await {
+    //         events.push(data);
+    //     }
 
-        let mut events = vec![];
-        while let Some(data) = rx.recv().await {
-            events.push(data);
-        }
+    //     let content = dbg!(result)
+    //         .unwrap()
+    //         .get("choices")
+    //         .unwrap()
+    //         .as_array()
+    //         .unwrap()
+    //         .get(0)
+    //         .unwrap()
+    //         .get("delta")
+    //         .unwrap()
+    //         .get("content")
+    //         .unwrap()
+    //         .as_str()
+    //         .unwrap()
+    //         .to_string();
 
-        let content = dbg!(result)
-            .unwrap()
-            .get("choices")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .get(0)
-            .unwrap()
-            .get("delta")
-            .unwrap()
-            .get("content")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string();
+    //     assert_eq!(events, vec!["The", " ", "202"]);
+    //     assert_eq!(content, events.join(""));
+    // }
 
-        assert_eq!(events, vec!["The", " ", "202"]);
-        assert_eq!(content, events.join(""));
-    }
+    // #[tokio::test]
+    // #[ignore = "Unable to perform actual streaming with mock server"]
+    // async fn test_sse_tool_calls_streaming() {
+    //     let mock_server = MockServer::start().await;
 
-    #[tokio::test]
-    #[ignore = "Unable to perform actual streaming with mock server"]
-    async fn test_sse_tool_calls_streaming() {
-        let mock_server = MockServer::start().await;
+    //     let sse_data = r#"
+    //     data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"role":"assistant","content":null},"logprobs":null,"finish_reason":null}]}
 
-        let sse_data = r#"
-        data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"role":"assistant","content":null},"logprobs":null,"finish_reason":null}]}
+    //     data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_hozqwzmegi9la14u8wmizj35","type":"function","function":{"name":"create_file","arguments":""}}]},"logprobs":null,"finish_reason":null}]}
 
-        data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_hozqwzmegi9la14u8wmizj35","type":"function","function":{"name":"create_file","arguments":""}}]},"logprobs":null,"finish_reason":null}]}
+    //     data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\""}}]},"logprobs":null,"finish_reason":null}]}
 
-        data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\""}}]},"logprobs":null,"finish_reason":null}]}
+    //     data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"file\""}}]},"logprobs":null,"finish_reason":null}]}
 
-        data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"file\""}}]},"logprobs":null,"finish_reason":null}]}
+    //     data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":": "}}]},"logprobs":null,"finish_reason":null}]}
 
-        data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":": "}}]},"logprobs":null,"finish_reason":null}]}
+    //     data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"some\"}"}}]},"logprobs":null,"finish_reason":null}]}
 
-        data: {"id":"8f18fa2f381e5b8e-VIE","object":"chat.completion.chunk","created":1734124608,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"some\"}"}}]},"logprobs":null,"finish_reason":null}]}
+    //     data: [DONE]
+    //     "#;
 
-        data: [DONE]
-        "#;
+    //     let _mock = wiremock::Mock::given(method("POST"))
+    //         .and(header(
+    //             CONTENT_TYPE.as_str(),
+    //             "application/json",
+    //         ))
+    //         .respond_with(
+    //             ResponseTemplate::new(200)
+    //                 .insert_header(
+    //                     CONTENT_TYPE.as_str(),
+    //                     "text/event-stream; charset=utf-8",
+    //                 )
+    //                 .set_body_string(sse_data),
+    //         )
+    //         .mount(&mock_server)
+    //         .await;
 
-        let _mock = wiremock::Mock::given(method("POST"))
-            .and(header(
-                CONTENT_TYPE.as_str(),
-                "application/json",
-            ))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header(
-                        CONTENT_TYPE.as_str(),
-                        "text/event-stream; charset=utf-8",
-                    )
-                    .set_body_string(sse_data),
-            )
-            .mount(&mock_server)
-            .await;
+    //     let client = NetworkClient::new(None, 10);
+    //     let mut settings = AssistantSettings::default();
+    //     settings.url = mock_server.uri();
 
-        let client = NetworkClient::new(None, 10);
-        let mut settings = AssistantSettings::default();
-        settings.url = mock_server.uri();
+    //     let payload = "dummy payload";
+    //     let request = client
+    //         .prepare_request(settings.clone(), payload.to_string())
+    //         .unwrap();
 
-        let payload = "dummy payload";
-        let request = client
-            .prepare_request(settings.clone(), payload.to_string())
-            .unwrap();
+    //     let (tx, mut rx) = mpsc::channel(10);
 
-        let (tx, mut rx) = mpsc::channel(10);
+    //     let result = client
+    //         .execute_request::<Map<String, Value>>(
+    //             request,
+    //             Arc::new(Mutex::new(tx)),
+    //             Arc::new(AtomicBool::new(false)),
+    //             settings.stream,
+    //         )
+    //         .await;
 
-        let result = client
-            .execute_request::<Map<String, Value>>(
-                request,
-                Arc::new(Mutex::new(tx)),
-                Arc::new(AtomicBool::new(false)),
-                settings.stream,
-            )
-            .await;
+    //     let mut function_name = vec![];
+    //     while let Some(data) = rx.recv().await {
+    //         function_name.push(data);
+    //     }
 
-        let mut function_name = vec![];
-        while let Some(data) = rx.recv().await {
-            function_name.push(data);
-        }
+    //     let binding = dbg!(result).unwrap();
+    //     let tool_calls_array = binding
+    //         .get("choices")
+    //         .unwrap()
+    //         .as_array()
+    //         .unwrap()
+    //         .get(0)
+    //         .unwrap()
+    //         .get("delta")
+    //         .unwrap()
+    //         .get("tool_calls")
+    //         .unwrap()
+    //         .as_array()
+    //         .unwrap();
 
-        let binding = dbg!(result).unwrap();
-        let tool_calls_array = binding
-            .get("choices")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .get(0)
-            .unwrap()
-            .get("delta")
-            .unwrap()
-            .get("tool_calls")
-            .unwrap()
-            .as_array()
-            .unwrap();
+    //     assert_eq!(function_name.join(""), "create_file");
 
-        assert_eq!(function_name.join(""), "create_file");
+    //     assert_eq!(
+    //         tool_calls_array[0]
+    //             .get("function")
+    //             .unwrap()
+    //             .get("name")
+    //             .unwrap()
+    //             .as_str()
+    //             .unwrap(),
+    //         "create_file"
+    //     );
 
-        assert_eq!(
-            tool_calls_array[0]
-                .get("function")
-                .unwrap()
-                .get("name")
-                .unwrap()
-                .as_str()
-                .unwrap(),
-            "create_file"
-        );
-
-        assert_eq!(
-            tool_calls_array[0]
-                .get("function")
-                .unwrap()
-                .get("arguments")
-                .unwrap()
-                .as_str()
-                .unwrap(),
-            "{\"file\": \"some\"}"
-        );
-    }
+    //     assert_eq!(
+    //         tool_calls_array[0]
+    //             .get("function")
+    //             .unwrap()
+    //             .get("arguments")
+    //             .unwrap()
+    //             .as_str()
+    //             .unwrap(),
+    //         "{\"file\": \"some\"}"
+    //     );
+    // }
 
     #[tokio::test]
     async fn test_tool_calls_non_streaming() {

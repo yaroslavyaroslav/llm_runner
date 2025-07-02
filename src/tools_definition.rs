@@ -18,7 +18,7 @@ pub enum FunctionName {
 
 pub static FUNCTIONS: Lazy<Vec<Arc<Tool>>> = Lazy::new(|| {
     vec![
-        // Arc::new((*CREATE_FILE).clone()),
+        // Arc::new((*WEB_SEARCH).clone()),
         Arc::new((*REPLACE_TEXT_FOR_WHOLE_FILE).clone()),
         Arc::new((*APPLY_PATCH).clone()),
         Arc::new((*READ_REGION_CONTENT).clone()),
@@ -27,27 +27,10 @@ pub static FUNCTIONS: Lazy<Vec<Arc<Tool>>> = Lazy::new(|| {
 });
 
 #[allow(dead_code)]
-pub static CREATE_FILE: Lazy<Tool> = Lazy::new(|| {
+pub static WEB_SEARCH: Lazy<Tool> = Lazy::new(|| {
     Tool {
-        r#type: "function".to_string(),
-        function: Some(FunctionToCall {
-            name: FunctionName::CreateFile.to_string(),
-            description: Some("Create a new file with the specified content at the given path.".to_string()),
-            parameters: json!({
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "The path where the file will be created."
-                    }
-                },
-                "type": "object",
-                "required": ["file_path"],
-                "additionalProperties": false
-            })
-            .as_object()
-            .cloned(),
-            strict: Some(true),
-        }),
+        r#type: "web_search_preview".to_string(),
+        function: None,
     }
 });
 
@@ -178,8 +161,8 @@ pub static GET_WORKING_DIRECTORY_CONTENT: Lazy<Tool> = Lazy::new(|| {
         function: Some(FunctionToCall {
             name: FunctionName::GetWorkingDirectoryContent.to_string(),
             description: Some(
-                r#"Recursively list files and directories in `ls -R` style,
-                respecting .gitignore rules.
+                r#"Recursively list files and directories in `ls -R` style.
+                By default, respects `.gitignore` rules; set `respect_gitignore` to false to include gitignored files.
                 Top-level directory is listed as `.:`, subdirectories as `./path:` sections.
                 Returns the output as a single text block."#
                     .to_string(),
@@ -189,11 +172,16 @@ pub static GET_WORKING_DIRECTORY_CONTENT: Lazy<Tool> = Lazy::new(|| {
                 "properties": {
                     "directory_path": {
                         "type": "string",
-                        "description": "The path of the directory to list (use `.` for project root).",
+                        "description": "The path of the directory to list (use `.` for project root)."
                     },
+                    "respect_gitignore": {
+                        "type": "boolean",
+                        "description": "Whether to respect .gitignore rules (defaults to true). Set to false to include gitignored files.",
+                        "default": true
+                    }
                 },
-                "required": ["directory_path"],
-                "additionalProperties": false,
+                "required": ["directory_path", "respect_gitignore"],
+                "additionalProperties": false
             })
             .as_object()
             .cloned(),

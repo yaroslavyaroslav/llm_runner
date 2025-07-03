@@ -61,46 +61,42 @@ impl LlmRunner {
             )
             .await;
 
-        if let Some(tool_calls_text) = result
+        if let Some(assistant_message) = result
             .as_ref()
             .ok()
-            .and_then(|r| {
-                r.choices
-                    .first()?
-                    .text
-                    .clone()
-            })
+            .and_then(|r| r.choices.first().map(|c| &c.message))
         {
-            if let Ok(ref message) = result {
-                let assistant_message = AssistantMessage {
-                    role: Roles::Assistant,
-                    content: Some(tool_calls_text.clone()),
-                    tool_calls: None,
-                };
-                cacher
-                    .lock()
-                    .await
-                    .write_entry(&CacheEntry::from(assistant_message))
-                    .ok();
+            // Write the assistant message to cache
+            cacher
+                .lock()
+                .await
+                .write_entry(&CacheEntry::from(assistant_message.clone()))
+                .ok();
+
+            // If there are tool calls, handle them
+            if let Some(tool_calls) = &assistant_message.tool_calls {
+                let content = LlmRunner::handle_function_call(
+                    tool_calls.clone(),
+                    Arc::clone(&function_handler),
+                );
+
+                Box::pin(Self::execute(
+                    provider,
+                    Arc::clone(&cacher),
+                    content,
+                    assistant_settings,
+                    sender,
+                    function_handler,
+                    cancel_flag,
+                    true,
+                ))
+                .await
+            } else if store {
+                // If no tool calls, but storing is enabled, store the message content
+                Ok(())
+            } else {
+                result.map(|_| ())
             }
-
-            // TODO: Parse tool_calls from tool_calls_text if needed
-            let content = LlmRunner::handle_function_call(
-                Vec::new(), // placeholder, parse from text if needed
-                Arc::clone(&function_handler),
-            );
-
-            Box::pin(Self::execute(
-                provider,
-                Arc::clone(&cacher),
-                content,
-                assistant_settings,
-                sender,
-                function_handler,
-                cancel_flag,
-                true,
-            ))
-            .await
         } else if store {
             let text = result?.choices[0].text.clone();
             let assistant_message = AssistantMessage {

@@ -61,11 +61,24 @@ impl LlmRunner {
             )
             .await;
 
-        if let Some(assistant_message) = result
-            .as_ref()
-            .ok()
-            .and_then(|r| r.choices.first().map(|c| &c.message))
-        {
+        // Restore robust agentic tool_call support
+        let response = result?;
+        let choice = response.choices.get(0);
+        let text = choice.and_then(|c| c.text.clone());
+
+        // Build assistant message from response
+        let mut assistant_message = AssistantMessage {
+            role: Roles::Assistant,
+            content: text,
+            tool_calls: None,
+        };
+
+        // If tool_calls are present in the response, parse and handle them
+        if let Some(tool_calls) = choice.and_then(|c| c.text.as_ref()).and_then(|t| {
+            // Try to parse tool_calls from the text (if present as JSON)
+            serde_json::from_str::<Vec<ToolCall>>(t).ok()
+        }) {
+            assistant_message.tool_calls = Some(tool_calls.clone());
             // Write the assistant message to cache
             cacher
                 .lock()
@@ -73,43 +86,30 @@ impl LlmRunner {
                 .write_entry(&CacheEntry::from(assistant_message.clone()))
                 .ok();
 
-            // If there are tool calls, handle them
-            if let Some(tool_calls) = &assistant_message.tool_calls {
-                let content = LlmRunner::handle_function_call(
-                    tool_calls.clone(),
-                    Arc::clone(&function_handler),
-                );
-
-                Box::pin(Self::execute(
-                    provider,
-                    Arc::clone(&cacher),
-                    content,
-                    assistant_settings,
-                    sender,
-                    function_handler,
-                    cancel_flag,
-                    true,
-                ))
-                .await
-            } else if store {
-                // If no tool calls, but storing is enabled, store the message content
-                Ok(())
-            } else {
-                result.map(|_| ())
-            }
+            // Handle tool calls and recursively call execute
+            let content = LlmRunner::handle_function_call(
+                tool_calls,
+                Arc::clone(&function_handler),
+            );
+            Box::pin(Self::execute(
+                provider,
+                Arc::clone(&cacher),
+                content,
+                assistant_settings,
+                sender,
+                function_handler,
+                cancel_flag,
+                true,
+            ))
+            .await
         } else if store {
-            let text = result?.choices[0].text.clone();
-            let assistant_message = AssistantMessage {
-                role: Roles::Assistant,
-                content: text,
-                tool_calls: None,
-            };
+            // No tool calls, just store the message
             cacher
                 .lock()
                 .await
                 .write_entry(&CacheEntry::from(assistant_message))
         } else {
-            result.map(|_| ())
+            Ok(())
         }
     }
 

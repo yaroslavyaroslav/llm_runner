@@ -147,8 +147,19 @@ fn build_system_message(settings: &AssistantSettings, message_count: usize) -> O
         .tools
         .unwrap_or(false)
     {
-        system_message.push_str(
-            r#"
+        let tool_prompt = match settings.api_type {
+            ApiType::OpenAi => {
+                r#"
+                    You are an agentic coding assistant operating inside Sublime Text.
+                    Use the available tools instead of guessing when file or project context is needed.
+                    Keep going until the user's request is resolved.
+                    When a tool is needed, call it directly instead of describing what you would do.
+                    Use `apply_patch` only with the minimal patch format accepted by the tool.
+                    Keep responses concise after tool results are available.
+                "#
+            }
+            _ => {
+                r#"
                     You are operating as and within the Sublime Text OpenAI Completion plugin, a ST injected agentic coding assistant built by Yaroslav Yashin. It wraps OpenAI models to enable natural language interaction with a local codebase. You are expected to be precise, safe, and helpful.
 
                     You can:
@@ -231,8 +242,10 @@ fn build_system_message(settings: &AssistantSettings, message_count: usize) -> O
                     ```
 
                     The plugin replies with `Done!` on success or a descriptive error otherwise.
-                    "#,
-        );
+                "#
+            }
+        };
+        system_message.push_str(tool_prompt);
     }
 
     Some(system_message)
@@ -296,6 +309,43 @@ pub(crate) fn tools_enabled(settings: &AssistantSettings) -> Option<Vec<Tool>> {
                 None
             }
         })
+}
+
+pub(crate) fn openai_compat_tools_enabled(settings: &AssistantSettings) -> Option<Vec<Tool>> {
+    tools_enabled(settings).map(|tools| {
+        tools
+            .into_iter()
+            .map(normalize_openai_compat_tool)
+            .collect()
+    })
+}
+
+fn normalize_openai_compat_tool(mut tool: Tool) -> Tool {
+    if let Some(function) = tool.function.as_mut() {
+        function.parameters = Some(normalize_openai_compat_schema_map(
+            function.parameters.take().unwrap_or_default(),
+        ));
+        function.description = openai_compat_description_for(&function.name);
+        function.strict = None;
+    }
+
+    tool
+}
+
+fn openai_compat_description_for(name: &str) -> Option<String> {
+    Some(
+        match name {
+            "apply_patch" => "Apply a patch block to an existing file.".to_string(),
+            "replace_text_for_whole_file" => {
+                "Replace the full contents of a file, optionally creating it.".to_string()
+            }
+            "get_working_directory_content" => {
+                "List files and directories recursively for a given path.".to_string()
+            }
+            "read_region_content" => "Read a selected region of a file.".to_string(),
+            _ => return None,
+        },
+    )
 }
 
 #[derive(Debug, Serialize)]
@@ -788,11 +838,186 @@ impl GoogleFunctionDeclaration {
         Some(Self {
             name: function.name,
             description: function.description,
-            parameters: function
-                .parameters
-                .unwrap_or_default(),
+            parameters: normalize_google_schema_map(function.parameters.unwrap_or_default()),
         })
     }
+}
+
+fn normalize_google_schema_map(schema: Map<String, Value>) -> Map<String, Value> {
+    match normalize_openai_compat_schema_value(Value::Object(schema)) {
+        Value::Object(map) => map,
+        _ => Map::new(),
+    }
+}
+
+fn normalize_openai_compat_schema_map(schema: Map<String, Value>) -> Map<String, Value> {
+    match normalize_openai_compat_schema_value(Value::Object(schema)) {
+        Value::Object(map) => map,
+        _ => Map::new(),
+    }
+}
+
+fn normalize_openai_compat_schema_value(schema: Value) -> Value {
+    let schema = match schema {
+        Value::Object(obj) => Value::Object(obj),
+        Value::String(text) => serde_json::from_str::<Value>(&text)
+            .ok()
+            .map(normalize_openai_compat_schema_value)
+            .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}})),
+        _ => return serde_json::json!({"type": "object", "properties": {}}),
+    };
+    let obj = match schema {
+        Value::Object(obj) => obj,
+        _ => return serde_json::json!({"type": "object", "properties": {}}),
+    };
+
+    let resolved = resolve_schema_refs(&obj);
+    let obj = resolved.as_object().cloned().unwrap_or(obj);
+    let mut result = Map::new();
+
+    for (key, value) in obj {
+        if matches!(
+            key.as_str(),
+            "$schema"
+                | "$defs"
+                | "$ref"
+                | "additionalProperties"
+                | "default"
+                | "$id"
+                | "$comment"
+                | "examples"
+                | "title"
+                | "const"
+                | "format"
+        ) {
+            continue;
+        }
+
+        if key == "anyOf" || key == "oneOf" {
+            if let Some(flattened) = try_flatten_openai_compat_any_of(&value) {
+                for (flattened_key, flattened_value) in flattened {
+                    result.insert(flattened_key, flattened_value);
+                }
+            }
+            continue;
+        }
+
+        if key == "type" {
+            if let Some(types) = value.as_array() {
+                let mut has_null = false;
+                let mut non_null_types = Vec::new();
+                for entry in types {
+                    if let Some(type_name) = entry.as_str() {
+                        if type_name == "null" {
+                            has_null = true;
+                        } else {
+                            non_null_types.push(type_name.to_string());
+                        }
+                    }
+                }
+
+                if let Some(first_type) = non_null_types.first() {
+                    result.insert("type".to_string(), Value::String(first_type.clone()));
+                    if has_null {
+                        result.insert("nullable".to_string(), Value::Bool(true));
+                    }
+                    continue;
+                }
+            }
+
+            result.insert(key, value);
+            continue;
+        }
+
+        if key == "properties" {
+            if let Some(properties) = value.as_object() {
+                let normalized_properties = properties
+                    .iter()
+                    .map(|(name, property_schema)| {
+                        (name.clone(), normalize_openai_compat_schema_value(property_schema.clone()))
+                    })
+                    .collect();
+                result.insert(key, Value::Object(normalized_properties));
+                continue;
+            }
+        }
+
+        if key == "items" {
+            result.insert(key, normalize_openai_compat_schema_value(value));
+            continue;
+        }
+
+        result.insert(key, value);
+    }
+
+    Value::Object(result)
+}
+
+fn resolve_schema_refs(obj: &Map<String, Value>) -> Value {
+    let defs = match obj.get("$defs").and_then(Value::as_object) {
+        Some(defs) => defs.clone(),
+        None => return Value::Object(obj.clone()),
+    };
+
+    fn inline_refs(value: &mut Value, defs: &Map<String, Value>) {
+        match value {
+            Value::Object(map) => {
+                if let Some(reference) = map.get("$ref").and_then(Value::as_str) {
+                    let ref_name = reference
+                        .strip_prefix("#/$defs/")
+                        .or_else(|| reference.strip_prefix("#/definitions/"));
+                    if let Some(name) = ref_name {
+                        if let Some(definition) = defs.get(name) {
+                            *value = definition.clone();
+                            inline_refs(value, defs);
+                            return;
+                        }
+                    }
+                }
+
+                for nested in map.values_mut() {
+                    inline_refs(nested, defs);
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    inline_refs(item, defs);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut resolved = Value::Object(obj.clone());
+    inline_refs(&mut resolved, &defs);
+    resolved
+}
+
+fn try_flatten_openai_compat_any_of(any_of: &Value) -> Option<Vec<(String, Value)>> {
+    let items = any_of.as_array()?;
+    if items.is_empty() {
+        return None;
+    }
+
+    let mut has_null = false;
+    let mut non_null_types = Vec::new();
+
+    for item in items {
+        let obj = item.as_object()?;
+        let type_name = obj.get("type")?.as_str()?;
+        if type_name == "null" {
+            has_null = true;
+        } else {
+            non_null_types.push(type_name.to_string());
+        }
+    }
+
+    let first_type = non_null_types.first()?.clone();
+    let mut flattened = vec![("type".to_string(), Value::String(first_type))];
+    if has_null {
+        flattened.push(("nullable".to_string(), Value::Bool(true)));
+    }
+    Some(flattened)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1283,6 +1508,42 @@ mod tests {
     }
 
     #[test]
+    fn test_prepare_openai_compat_payload_normalizes_tool_schema() {
+        let settings = dummy_settings(ApiType::OpenAi);
+        let payload = prepare_payload(&settings, vec![], vec![]).unwrap();
+        let payload_json: Value = serde_json::from_str(&payload).unwrap();
+        let tools = payload_json["tools"]
+            .as_array()
+            .expect("Expected OpenAI-compatible tools array");
+
+        let read_region = tools
+            .iter()
+            .find(|tool| tool["function"]["name"] == "read_region_content")
+            .expect("Expected read_region_content tool");
+        assert!(read_region["function"].get("strict").is_none());
+        assert!(
+            read_region["function"]["parameters"]
+                .get("additionalProperties")
+                .is_none()
+        );
+        assert!(
+            read_region["function"]["parameters"]["properties"]["region"]
+                .get("additionalProperties")
+                .is_none()
+        );
+
+        let get_dir = tools
+            .iter()
+            .find(|tool| tool["function"]["name"] == "get_working_directory_content")
+            .expect("Expected get_working_directory_content tool");
+        assert!(
+            get_dir["function"]["parameters"]["properties"]["respect_gitignore"]
+                .get("default")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn test_prepare_google_payload_uses_camel_case_tool_fields() {
         let settings = dummy_settings(ApiType::Google);
         let payload = prepare_payload(
@@ -1370,6 +1631,43 @@ mod tests {
         assert_eq!(
             payload_json["contents"][1]["parts"][0]["functionResponse"]["response"]["ok"],
             true
+        );
+    }
+
+    #[test]
+    fn test_prepare_google_payload_normalizes_tool_schema_for_gemini() {
+        let settings = dummy_settings(ApiType::Google);
+        let payload = prepare_payload(&settings, vec![], vec![]).unwrap();
+        let payload_json: Value = serde_json::from_str(&payload).unwrap();
+        let declarations = payload_json["tools"][0]["functionDeclarations"]
+            .as_array()
+            .expect("Expected functionDeclarations array");
+
+        let read_region = declarations
+            .iter()
+            .find(|declaration| declaration["name"] == "read_region_content")
+            .expect("Expected read_region_content declaration");
+
+        assert!(
+            read_region["parameters"]
+                .get("additionalProperties")
+                .is_none()
+        );
+        assert!(
+            read_region["parameters"]["properties"]["region"]
+                .get("additionalProperties")
+                .is_none()
+        );
+
+        let get_dir = declarations
+            .iter()
+            .find(|declaration| declaration["name"] == "get_working_directory_content")
+            .expect("Expected get_working_directory_content declaration");
+
+        assert!(
+            get_dir["parameters"]["properties"]["respect_gitignore"]
+                .get("default")
+                .is_none()
         );
     }
 

@@ -5,7 +5,13 @@ use serde_json::{Map, Value};
 use strum_macros::{Display, EnumString};
 
 use crate::{
-    provider::{ProviderConversation, ProviderMessage, build_conversation, tools_enabled},
+    provider::{
+        ProviderConversation,
+        ProviderMessage,
+        build_conversation,
+        openai_compat_tools_enabled,
+        tools_enabled,
+    },
     types::{ApiType, AssistantSettings, CacheEntry, InputKind, ReasonEffort, SublimeInputContent},
 };
 
@@ -149,7 +155,11 @@ impl OpenAICompletionRequest {
             top_p: settings.top_p,
             frequency_penalty: settings.frequency_penalty,
             presence_penalty: settings.presence_penalty,
-            tools: tools_enabled(settings),
+            tools: match settings.api_type {
+                ApiType::OpenAi => openai_compat_tools_enabled(settings),
+                ApiType::PlainText => tools_enabled(settings),
+                ApiType::Anthropic | ApiType::OpenAiResponses | ApiType::Google => None,
+            },
             parallel_tool_calls: settings.parallel_tool_calls,
         }
     }
@@ -259,7 +269,7 @@ impl OpenAIMessage {
     pub(crate) fn from_system(value: String) -> Self {
         OpenAIMessage {
             content: vec![MessageContent::from_text(value)].into(),
-            role: Roles::Developer,
+            role: Roles::System,
             tool_call_id: None,
             name: None,
             tool_calls: None,
@@ -518,8 +528,11 @@ pub struct Tool {
 #[serde(rename_all = "snake_case")]
 pub struct FunctionToCall {
     pub(crate) name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) parameters: Option<Map<String, Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) strict: Option<bool>,
 }
 

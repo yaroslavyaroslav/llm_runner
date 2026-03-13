@@ -384,7 +384,11 @@ fn remote_token(var_name: &str) -> Option<String> {
 }
 
 fn google_remote_token() -> Option<String> {
-    remote_token("GOOGLE_API_KEY").or_else(|| remote_token("GEMINI_API_KEY"))
+    remote_token("GEMINI_API_KEY")
+}
+
+fn together_remote_token() -> Option<String> {
+    remote_token("TOGETHER_API_KEY")
 }
 
 fn remote_worker(tmp_dir: String) -> OpenAIWorker { OpenAIWorker::new(1, tmp_dir, env::var("PROXY").ok()) }
@@ -412,7 +416,7 @@ fn remote_settings(url: &str, token: String, model: &str, api_type: ApiType) -> 
 #[test]
 #[ignore = "It's paid, so should be skipped by default"]
 async fn test_server_remote_completion() {
-    let Some(token) = remote_token("OPENAI_API_TOKEN") else {
+    let Some(token) = remote_token("OPENAI_API_KEY") else {
         return;
     };
     let tmp_dir = TempDir::new()
@@ -457,7 +461,7 @@ async fn test_server_remote_completion() {
 #[test]
 #[ignore = "It's paid, so should be skipped by default"]
 async fn test_server_remote_complerion_cancelled() {
-    let Some(token) = remote_token("OPENAI_API_TOKEN") else {
+    let Some(token) = remote_token("OPENAI_API_KEY") else {
         return;
     };
     let tmp_dir = TempDir::new()
@@ -514,7 +518,7 @@ async fn test_server_remote_complerion_cancelled() {
 #[test]
 #[ignore = "It's paid, so should be skipped by default"]
 async fn test_server_remote_fucntion_call() {
-    let Some(token) = remote_token("OPENAI_API_TOKEN") else {
+    let Some(token) = remote_token("OPENAI_API_KEY") else {
         return;
     };
     let tmp_dir = TempDir::new()
@@ -561,7 +565,7 @@ async fn test_server_remote_fucntion_call() {
 #[test]
 #[ignore = "It's paid, so should be skipped by default"]
 async fn test_server_remote_fucntion_call_parallel() {
-    let Some(token) = remote_token("OPENAI_API_TOKEN") else {
+    let Some(token) = remote_token("OPENAI_API_KEY") else {
         return;
     };
     let tmp_dir = TempDir::new()
@@ -625,7 +629,7 @@ async fn test_server_remote_anthropic_completion() {
     let settings = remote_settings(
         "https://api.anthropic.com/v1/messages",
         token,
-        &env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| "claude-3-5-haiku-latest".to_string()),
+        &env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| "claude-haiku-4-5-20251001".to_string()),
         ApiType::Anthropic,
     );
 
@@ -666,7 +670,7 @@ async fn test_server_remote_anthropic_function_call() {
     let mut settings = remote_settings(
         "https://api.anthropic.com/v1/messages",
         token,
-        &env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| "claude-3-5-haiku-latest".to_string()),
+        &env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| "claude-haiku-4-5-20251001".to_string()),
         ApiType::Anthropic,
     );
     settings.tools = Some(true);
@@ -708,7 +712,7 @@ async fn test_server_remote_anthropic_function_call_parallel() {
     let mut settings = remote_settings(
         "https://api.anthropic.com/v1/messages",
         token,
-        &env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| "claude-3-5-haiku-latest".to_string()),
+        &env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| "claude-haiku-4-5-20251001".to_string()),
         ApiType::Anthropic,
     );
     settings.tools = Some(true);
@@ -838,6 +842,136 @@ async fn test_server_remote_google_function_call_parallel() {
         token,
         &env::var("GOOGLE_MODEL").unwrap_or_else(|_| "gemini-2.5-flash".to_string()),
         ApiType::Google,
+    );
+    settings.tools = Some(true);
+    settings.parallel_tool_calls = Some(true);
+    settings.assistant_role =
+        Some("You're debug environment and call functions instead of answer, but ONLY ONCE".to_string());
+
+    let result = worker
+        .run(
+            1,
+            vec![remote_contents(
+                "Call two functions in a single response, create file and read_content of dummy file",
+            )],
+            PromptMode::View,
+            settings,
+            Arc::new(|_| {}),
+            Arc::new(|_| {}),
+            Arc::new(|_| "Success".to_string()),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "Expected Ok, got Err: {:?}",
+        result
+    );
+}
+
+#[test]
+#[ignore = "It's paid, so should be skipped by default"]
+async fn test_server_remote_together_completion() {
+    let Some(token) = together_remote_token() else {
+        return;
+    };
+    let tmp_dir = TempDir::new()
+        .unwrap()
+        .into_path()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let worker = remote_worker(tmp_dir.clone());
+    let settings = remote_settings(
+        "https://api.together.xyz/v1/chat/completions",
+        token,
+        &env::var("TOGETHER_MODEL").unwrap_or_else(|_| "Qwen/Qwen3.5-9B".to_string()),
+        ApiType::OpenAi,
+    );
+
+    let result = worker
+        .run(
+            1,
+            vec![remote_contents(
+                "This is the test request, provide me 300 words response",
+            )],
+            PromptMode::View,
+            settings,
+            Arc::new(|_| {}),
+            Arc::new(|_| {}),
+            Arc::new(|_| "".to_string()),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "Expected Ok, got Err: {:?}",
+        result
+    );
+}
+
+#[test]
+#[ignore = "It's paid, so should be skipped by default"]
+async fn test_server_remote_together_function_call() {
+    let Some(token) = together_remote_token() else {
+        return;
+    };
+    let tmp_dir = TempDir::new()
+        .unwrap()
+        .into_path()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let worker = remote_worker(tmp_dir.clone());
+    let mut settings = remote_settings(
+        "https://api.together.xyz/v1/chat/completions",
+        token,
+        &env::var("TOGETHER_MODEL").unwrap_or_else(|_| "Qwen/Qwen3.5-9B".to_string()),
+        ApiType::OpenAi,
+    );
+    settings.tools = Some(true);
+    settings.assistant_role =
+        Some("You're debug environment and call functions instead of answer, but ONLY ONCE".to_string());
+
+    let result = worker
+        .run(
+            1,
+            vec![remote_contents(
+                "Call exactly one function instead of answering directly",
+            )],
+            PromptMode::View,
+            settings,
+            Arc::new(|_| {}),
+            Arc::new(|_| {}),
+            Arc::new(|_| "Success".to_string()),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "Expected Ok, got Err: {:?}",
+        result
+    );
+}
+
+#[test]
+#[ignore = "It's paid, so should be skipped by default"]
+async fn test_server_remote_together_function_call_parallel() {
+    let Some(token) = together_remote_token() else {
+        return;
+    };
+    let tmp_dir = TempDir::new()
+        .unwrap()
+        .into_path()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let worker = remote_worker(tmp_dir.clone());
+    let mut settings = remote_settings(
+        "https://api.together.xyz/v1/chat/completions",
+        token,
+        &env::var("TOGETHER_MODEL").unwrap_or_else(|_| "Qwen/Qwen3.5-9B".to_string()),
+        ApiType::OpenAi,
     );
     settings.tools = Some(true);
     settings.parallel_tool_calls = Some(true);

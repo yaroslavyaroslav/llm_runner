@@ -98,6 +98,54 @@ def test_assistant_settings_real():
     assert settings.api_type == ApiType.OpenAi
 
 
+def test_assistant_settings_supports_new_provider_types():
+    anthropic = AssistantSettings(
+        {
+            'name': 'Claude',
+            'chat_model': 'claude-sonnet-4-5',
+            'api_type': 'anthropic',
+            'url': 'https://api.anthropic.com/v1/messages',
+        }
+    )
+    assert anthropic.api_type == ApiType.Anthropic
+
+    responses = AssistantSettings(
+        {
+            'name': 'Responses',
+            'chat_model': 'gpt-5',
+            'api_type': 'open_ai_responses',
+            'url': 'https://api.openai.com/v1/responses',
+        }
+    )
+    assert responses.api_type == ApiType.OpenAiResponses
+
+    google = AssistantSettings(
+        {
+            'name': 'Gemini',
+            'chat_model': 'gemini-2.5-flash',
+            'api_type': 'google',
+            'url': 'https://generativelanguage.googleapis.com/v1beta',
+        }
+    )
+    assert google.api_type == ApiType.Google
+
+    legacy_typo = AssistantSettings(
+        {
+            'name': 'Legacy Claude',
+            'chat_model': 'claude',
+            'api_type': 'antropic',
+        }
+    )
+    assert legacy_typo.api_type == ApiType.Anthropic
+
+
+def test_assistant_settings_default_provider_is_preserved():
+    settings = AssistantSettings({'name': 'Default only'})
+
+    assert settings.api_type == ApiType.PlainText
+    assert settings.url == 'https://api.openai.com/v1/chat/completions'
+
+
 def test_python_worker_plain_run():
     proxy = os.environ.get('PROXY')
     if proxy is not None:

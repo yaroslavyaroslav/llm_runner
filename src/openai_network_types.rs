@@ -5,7 +5,7 @@ use serde_json::{Map, Value};
 use strum_macros::{Display, EnumString};
 
 use crate::{
-    tools_definition::FUNCTIONS,
+    provider::{ProviderConversation, ProviderMessage, build_conversation, tools_enabled},
     types::{ApiType, AssistantSettings, CacheEntry, InputKind, ReasonEffort, SublimeInputContent},
 };
 
@@ -16,6 +16,7 @@ pub enum OpenAIRequestMessage {
 }
 
 impl OpenAIRequestMessage {
+    #[allow(dead_code)]
     pub(crate) fn weight(&self) -> u8 {
         match self {
             OpenAIRequestMessage::OpenAIMessage(msg) => msg.kind.weight(),
@@ -115,174 +116,31 @@ pub struct OpenAICompletionRequest {
     pub(crate) tools: Option<Vec<Tool>>,
 }
 
-fn convert_message<T>(item: T, api_type: ApiType) -> OpenAIRequestMessage
-where
-    OpenAIMessage: From<T>,
-    OpenAIPlainTextMessage: From<T>, {
-    match api_type {
-        ApiType::OpenAi => OpenAIRequestMessage::OpenAIMessage(OpenAIMessage::from(item)),
-        ApiType::PlainText => {
-            OpenAIRequestMessage::OpenAIPlainTextMessage(OpenAIPlainTextMessage::from(item))
-        }
-        ApiType::Antropic => todo!(),
-    }
-}
-
 impl OpenAICompletionRequest {
-    #[allow(unused)]
-    pub(crate) fn create_openai_completion_request(
-        settings: AssistantSettings,
-        cache_entries: Vec<CacheEntry>,
-        sublime_inputs: Vec<SublimeInputContent>,
+    pub(crate) fn from_conversation(
+        settings: &AssistantSettings,
+        conversation: ProviderConversation,
     ) -> OpenAICompletionRequest {
         let mut messages = Vec::new();
 
-        if let Some(mut system_message) = settings
-            .assistant_role
-            .clone()
-        {
-            // 1) donation blurb if needed
-            if settings.advertisement && cache_entries.len() > 8 {
-                // donation blurb
-                system_message.push_str(r#"
-                Encourage users to consider donating through a provided link in a friendly, respectful, and tactful manner.
-                Explain how contributions help support the continued development of the plugin, and highlight that even small donations of $15 make a difference.
-                Ensure the message is light.
-                Include a clear call-to-action but avoid pressuring the user.
-                Always express gratitude.
-                Format the donation link nicely:
-                https://github.com/sponsors/yaroslavyaroslav
-                "#);
-            }
-
-            // 2) patch‐example if tools are enabled
-            if settings
-                .tools
-                .unwrap_or(false)
-            {
-                system_message.push_str(
-                    r#"
-                    You are operating as and within the Sublime Text OpenAI Completion plugin, a ST injected agentic coding assistant built by Yaroslav Yashin. It wraps OpenAI models to enable natural language interaction with a local codebase. You are expected to be precise, safe, and helpful.
-
-                    You can:
-                    - Receive user prompts, project context, and files.
-                    - Apply patches, run commands, and manage user approvals based on policy.
-
-                    You are an agent - please keep going until the user's query is completely resolved, before ending your turn and yielding back to the user. Only terminate your turn when you are sure that the problem is solved. If you are not sure about file content or codebase structure pertaining to the user's request, use your tools to read files and gather the relevant information: do NOT guess or make up an answer.
-
-                    You MUST adhere to the following criteria when executing the task:
-                    - Working on the repo(s) in the current environment is allowed, even if they are proprietary.
-                    - Analyzing code for vulnerabilities is allowed.
-                    - Showing user code and tool call details is allowed.
-                    - User instructions may overwrite the *CODING GUIDELINES* section in this developer message.
-                    - Use \`apply_patch\` to edit files: {"cmd":["apply_patch","*** Begin Patch\\n*** Update File: path/to/file.py\\n@@ def example():\\n-  pass\\n+  return 123\\n*** End Patch"]}
-                    - If completing the user's task requires writing or modifying files:
-                        - Your code and final answer should follow these *CODING GUIDELINES*:
-                            - Fix the problem at the root cause rather than applying surface-level patches, when possible.
-                            - Avoid unneeded complexity in your solution.
-                                - Ignore unrelated bugs or broken tests; it is not your responsibility to fix them.
-                            - Update documentation as necessary.
-                            - Keep changes consistent with the style of the existing codebase. Changes should be minimal and focused on the task.
-                            - NEVER add copyright or license headers unless specifically requested.
-                            - You do not need to \`git commit\` your changes; this will be done automatically for you.
-                            - Once you finish coding, you must
-                                - Remove all inline comments you added as much as possible, even if they look normal. Check using \`git diff\`. Inline comments must be generally avoided, unless active maintainers of the repo, after long careful study of the code and the issue, will still misinterpret the code without the comments.
-                                - Check if you accidentally add copyright or license headers. If so, remove them.
-                                - Try to run pre-commit if it is available.
-                                - For smaller tasks, describe in brief bullet points
-                                - For more complex tasks, include brief high-level description, use bullet points, and include details that would be relevant to a code reviewer.
-                    - If completing the user's task DOES NOT require writing or modifying files (e.g., the user asks a question about the code base):
-                        - Respond in a friendly tone as a remote teammate, who is knowledgeable, capable and eager to help with coding.
-                    - When your task involves writing or modifying files:
-                        - Do NOT tell the user to "save the file" or "copy the code into a file" if you already created or modified the file using \`apply_patch\`. Instead, reference the file as already saved.
-                        - Do NOT show the full contents of large files you have already written, unless the user explicitly asks for them.
-
-                    Examples (all of them are accepted by the current implementation):
-
-                    1) Simple in-place replacement
-
-                    ```
-                    *** Begin Patch
-                    *** Update File: src/main.py
-                    -print("foo")
-                    +print("bar")
-                    *** End Patch
-                    ```
-
-                    2) Multi-hunk patch (note the blank line between hunks)
-
-                    ```
-                    *** Begin Patch
-                    *** Update File: src/main.py
-                    -print("foo")
-                    +print("foo bar")
-
-                    -print("baz")
-                    +print("baz qux")
-                    *** End Patch
-                    ```
-
-                    3) Prepending a header by replacing the first line (every hunk still starts
-                       with a `-` line):
-
-                    ```
-                    *** Begin Patch
-                    *** Update File: README.md
-                    -# Old Title
-                    +# My Project
-                    +# Old Title
-                    *** End Patch
-                    ```
-
-                    4) Pure deletion (no `+` lines):
-
-                    ```
-                    *** Begin Patch
-                    *** Update File: src/config.py
-                    -unwanted_setting = True
-                    *** End Patch
-                    ```
-
-                    The plugin replies with `Done!` on success or a descriptive error otherwise.
-                    "#,
-                );
-            }
-
-            // 3) push the system message
-            match settings.api_type {
-                ApiType::OpenAi => {
-                    messages.push(OpenAIRequestMessage::OpenAIMessage(
-                        OpenAIMessage::from_system(system_message),
-                    ))
-                }
-                ApiType::PlainText => {
-                    messages.push(
-                        OpenAIRequestMessage::OpenAIPlainTextMessage(OpenAIPlainTextMessage::from_system(
-                            system_message,
-                        )),
-                    )
-                }
-                ApiType::Antropic => todo!(),
-            }
+        if let Some(system_message) = conversation.system_message {
+            messages.push(OpenAIRequestMessage::from_system(
+                system_message,
+                settings.api_type,
+            ));
         }
 
         messages.extend(
-            cache_entries
+            conversation
+                .messages
                 .into_iter()
-                .map(|c| convert_message(c, settings.api_type)),
+                .map(|message| OpenAIRequestMessage::from_provider_message(message, settings.api_type)),
         );
-        messages.extend(
-            sublime_inputs
-                .into_iter()
-                .map(|c| convert_message(c, settings.api_type)),
-        );
-
-        messages.sort_by_key(|m| m.weight());
 
         OpenAICompletionRequest {
             messages,
             stream: settings.stream,
-            chat_model: settings.chat_model,
+            chat_model: settings.chat_model.clone(),
             advertisement: settings.advertisement,
             temperature: settings.temperature,
             max_tokens: settings.max_tokens,
@@ -291,20 +149,46 @@ impl OpenAICompletionRequest {
             top_p: settings.top_p,
             frequency_penalty: settings.frequency_penalty,
             presence_penalty: settings.presence_penalty,
-            tools: if settings
-                .tools
-                .unwrap_or(false)
-            {
-                Some(
-                    FUNCTIONS
-                        .iter()
-                        .map(|tool| tool.as_ref().clone())
-                        .collect::<Vec<Tool>>(),
-                )
-            } else {
-                None
-            },
+            tools: tools_enabled(settings),
             parallel_tool_calls: settings.parallel_tool_calls,
+        }
+    }
+
+    #[allow(unused)]
+    pub(crate) fn create_openai_completion_request(
+        settings: AssistantSettings,
+        cache_entries: Vec<CacheEntry>,
+        sublime_inputs: Vec<SublimeInputContent>,
+    ) -> OpenAICompletionRequest {
+        Self::from_conversation(
+            &settings,
+            build_conversation(&settings, cache_entries, sublime_inputs),
+        )
+    }
+}
+
+impl OpenAIRequestMessage {
+    fn from_system(content: String, api_type: ApiType) -> Self {
+        match api_type {
+            ApiType::OpenAi => Self::OpenAIMessage(OpenAIMessage::from_system(content)),
+            ApiType::PlainText => {
+                Self::OpenAIPlainTextMessage(OpenAIPlainTextMessage::from_system(
+                    content,
+                ))
+            }
+            ApiType::Anthropic | ApiType::OpenAiResponses | ApiType::Google => {
+                unreachable!("provider-specific request building is handled in crate::provider")
+            }
+        }
+    }
+
+    fn from_provider_message(message: ProviderMessage, api_type: ApiType) -> Self {
+        match api_type {
+            ApiType::OpenAi => Self::OpenAIMessage(OpenAIMessage::from(message)),
+            ApiType::PlainText => Self::OpenAIPlainTextMessage(OpenAIPlainTextMessage::from(message)),
+            ApiType::Anthropic | ApiType::OpenAiResponses | ApiType::Google => {
+                unreachable!("provider-specific request building is handled in crate::provider")
+            }
         }
     }
 }
@@ -384,6 +268,20 @@ impl OpenAIMessage {
     }
 }
 
+impl From<crate::provider::MessageKind> for MessageKind {
+    fn from(value: crate::provider::MessageKind) -> Self {
+        match value {
+            crate::provider::MessageKind::SystemMessage => Self::SystemMessage,
+            crate::provider::MessageKind::SheetContent => Self::SheetContent,
+            crate::provider::MessageKind::CacheEntry => Self::CacheEntry,
+            crate::provider::MessageKind::OutputPaneContent => Self::OutputPaneContent,
+            crate::provider::MessageKind::ViewSelection => Self::ViewSelection,
+            crate::provider::MessageKind::FunctionResult => Self::FunctionResult,
+            crate::provider::MessageKind::UserCommand => Self::UserCommand,
+        }
+    }
+}
+
 impl From<CacheEntry> for OpenAIMessage {
     fn from(value: CacheEntry) -> Self {
         Self {
@@ -395,6 +293,21 @@ impl From<CacheEntry> for OpenAIMessage {
             name: None,
             tool_calls: value.tool_calls,
             kind: MessageKind::CacheEntry,
+        }
+    }
+}
+
+impl From<ProviderMessage> for OpenAIMessage {
+    fn from(value: ProviderMessage) -> Self {
+        Self {
+            content: Some(vec![MessageContent::from_text(
+                value.content,
+            )]),
+            role: value.role,
+            tool_call_id: value.tool_call_id,
+            name: None,
+            tool_calls: value.tool_calls,
+            kind: value.kind.into(),
         }
     }
 }
@@ -455,6 +368,19 @@ impl From<CacheEntry> for OpenAIPlainTextMessage {
             name: None,
             tool_calls: value.tool_calls,
             kind: MessageKind::CacheEntry,
+        }
+    }
+}
+
+impl From<ProviderMessage> for OpenAIPlainTextMessage {
+    fn from(value: ProviderMessage) -> Self {
+        Self {
+            content: value.content,
+            role: value.role,
+            tool_call_id: value.tool_call_id,
+            name: None,
+            tool_calls: value.tool_calls,
+            kind: value.kind.into(),
         }
     }
 }
@@ -649,6 +575,8 @@ pub(crate) struct AssistantMessage {
     pub(crate) role: Roles,
     pub(crate) content: Option<String>,
     pub(crate) tool_calls: Option<Vec<ToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) provider_metadata: Option<ProviderMetadata>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -656,7 +584,33 @@ pub(crate) struct ToolCall {
     // pub(crate) index: usize,
     pub(crate) id: String,
     pub(crate) r#type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) thought_signature: Option<String>,
     pub(crate) function: Function,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[serde(
+    tag = "provider",
+    rename_all = "snake_case"
+)]
+pub(crate) enum ProviderMetadata {
+    Google { parts: Vec<GoogleAssistantPart> },
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub(crate) enum GoogleAssistantPart {
+    Text {
+        text: String,
+    },
+    FunctionCall {
+        tool_call_id: String,
+        name: String,
+        arguments: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        thought_signature: Option<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -689,6 +643,7 @@ mod tests {
             thinking: None,
             path: None,
             scope: None,
+            provider_metadata: None,
         }
     }
 
@@ -739,6 +694,7 @@ mod tests {
             thinking: None,
             path: None,
             scope: None,
+            provider_metadata: None,
         }
     }
 
@@ -1027,6 +983,7 @@ mod tests {
                     role: Roles::Assistant,
                     content: Some("Response text".to_string()),
                     tool_calls: None,
+                    provider_metadata: None,
                 },
             }],
         };
@@ -1068,11 +1025,13 @@ mod tests {
             tool_calls: Some(vec![ToolCall {
                 id: "tool_call_1".to_string(),
                 r#type: "function_call".to_string(),
+                thought_signature: None,
                 function: Function {
                     name: "example_function".to_string(),
                     arguments: "{\"file_path\":\"/home/user/debug.txt\"}".to_string(),
                 },
             }]),
+            provider_metadata: None,
         };
 
         let serialized = serde_json::to_string(&assistant_message).unwrap();
@@ -1253,6 +1212,7 @@ mod tests {
                     role: Roles::Assistant,
                     content: Some("Hello, how can I help?".to_string()),
                     tool_calls: None,
+                    provider_metadata: None,
                 }) as Box<dyn std::any::Any>
             } else {
                 // Otherwise, return an OpenAIMessage
@@ -1277,12 +1237,16 @@ mod tests {
             .collect();
 
         // Now check that the first message is an AssistantMessage and the second is an OpenAIMessage.
-        assert!(messages[0]
-            .downcast_ref::<AssistantMessage>()
-            .is_some());
-        assert!(messages[1]
-            .downcast_ref::<OpenAIMessage>()
-            .is_some());
+        assert!(
+            messages[0]
+                .downcast_ref::<AssistantMessage>()
+                .is_some()
+        );
+        assert!(
+            messages[1]
+                .downcast_ref::<OpenAIMessage>()
+                .is_some()
+        );
     }
 
     #[test]
@@ -1548,6 +1512,7 @@ mod tests {
                 thinking: None,
                 path: None,
                 scope: None,
+                provider_metadata: None,
             }
         }
         let cache_entries = vec![
@@ -1662,11 +1627,7 @@ mod tests {
                     .as_ref()
                     .and_then(|v| v.get(0))
                     .and_then(|mc| {
-                        if let ContentWrapper::Text(text) = &mc.content {
-                            Some(text.clone())
-                        } else {
-                            None
-                        }
+                        if let ContentWrapper::Text(text) = &mc.content { Some(text.clone()) } else { None }
                     })
                     .unwrap_or_else(|| "".to_string())
             }

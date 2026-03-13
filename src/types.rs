@@ -1,11 +1,11 @@
 use std::{collections::HashMap, str::FromStr};
 
-use pyo3::{pyclass, pymethods, FromPyObject};
+use pyo3::{FromPyObject, pyclass, pymethods};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
 
-use crate::openai_network_types::{AssistantMessage, Roles, ToolCall};
+use crate::openai_network_types::{AssistantMessage, ProviderMetadata, Roles, ToolCall};
 
 #[allow(unused)]
 #[pyclass(eq, eq_int)]
@@ -47,6 +47,9 @@ pub(crate) struct CacheEntry {
     /// Used in response to the model with the result of a tool call initiated by it
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) tool_call_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) provider_metadata: Option<ProviderMetadata>,
 }
 
 impl From<SublimeInputContent> for CacheEntry {
@@ -70,6 +73,7 @@ impl From<SublimeInputContent> for CacheEntry {
             role,
             tool_calls: None,
             tool_call_id: content.tool_id,
+            provider_metadata: None,
         }
     }
 }
@@ -92,6 +96,7 @@ impl From<AssistantMessage> for CacheEntry {
             role: content.role,
             tool_calls: content.tool_calls,
             tool_call_id: None,
+            provider_metadata: content.provider_metadata,
         }
     }
 }
@@ -308,8 +313,18 @@ pub enum ApiType {
     OpenAi,
     #[strum(serialize = "plain_text")]
     PlainText,
-    #[strum(serialize = "antropic")]
-    Antropic,
+    #[strum(
+        serialize = "anthropic",
+        serialize = "antropic"
+    )]
+    Anthropic,
+    #[strum(
+        serialize = "open_ai_responses",
+        serialize = "responses"
+    )]
+    OpenAiResponses,
+    #[strum(serialize = "google")]
+    Google,
 }
 
 #[derive(FromPyObject, Clone)]
@@ -466,5 +481,29 @@ mod tests {
         is_send::<InputKind>();
         is_send::<CacheEntry>();
         is_send::<PromptMode>();
+    }
+
+    #[test]
+    fn test_new_api_type_aliases_parse() {
+        let settings = AssistantSettings::new(HashMap::from([(
+            "api_type".to_string(),
+            RustyEnum::String("anthropic".to_string()),
+        )]));
+        assert_eq!(settings.api_type, ApiType::Anthropic);
+
+        let settings = AssistantSettings::new(HashMap::from([(
+            "api_type".to_string(),
+            RustyEnum::String("open_ai_responses".to_string()),
+        )]));
+        assert_eq!(
+            settings.api_type,
+            ApiType::OpenAiResponses
+        );
+
+        let settings = AssistantSettings::new(HashMap::from([(
+            "api_type".to_string(),
+            RustyEnum::String("google".to_string()),
+        )]));
+        assert_eq!(settings.api_type, ApiType::Google);
     }
 }

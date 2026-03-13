@@ -18,7 +18,7 @@ pub enum FunctionName {
 
 pub static FUNCTIONS: Lazy<Vec<Arc<Tool>>> = Lazy::new(|| {
     vec![
-        // Arc::new((*CREATE_FILE).clone()),
+        // Arc::new((*WEB_SEARCH).clone()),
         Arc::new((*REPLACE_TEXT_FOR_WHOLE_FILE).clone()),
         Arc::new((*APPLY_PATCH).clone()),
         Arc::new((*READ_REGION_CONTENT).clone()),
@@ -27,27 +27,10 @@ pub static FUNCTIONS: Lazy<Vec<Arc<Tool>>> = Lazy::new(|| {
 });
 
 #[allow(dead_code)]
-pub static CREATE_FILE: Lazy<Tool> = Lazy::new(|| {
+pub static WEB_SEARCH: Lazy<Tool> = Lazy::new(|| {
     Tool {
-        r#type: "function".to_string(),
-        function: Some(FunctionToCall {
-            name: FunctionName::CreateFile.to_string(),
-            description: Some("Create a new file with the specified content at the given path.".to_string()),
-            parameters: json!({
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "The path where the file will be created."
-                    }
-                },
-                "type": "object",
-                "required": ["file_path"],
-                "additionalProperties": false
-            })
-            .as_object()
-            .cloned(),
-            strict: Some(true),
-        }),
+        r#type: "web_search_preview".to_string(),
+        function: None,
     }
 });
 
@@ -58,19 +41,66 @@ pub static APPLY_PATCH: Lazy<Tool> = Lazy::new(|| {
             name: FunctionName::ApplyPatch.to_string(),
             description: Some(
                 r#"Apply a patch to the given file.
-                You must embed the file path in the patch itself:
 
+                This tool understands ONLY a *minimal* diff format:
+
+                  - NO `@@` / line-number headers or `index` lines.
+                  - Each **hunk** MUST start with one or more `-` lines that exactly match
+                    existing text in the target file (this is the context to search for).
+                  - `+` lines that immediately follow the `-` block form the replacement.
+                    If there are no `+` lines, the hunk is a pure deletion.
+                  - Separate multiple hunks with **at least one blank line**.
+
+                Embed the file path right after `*** Update File:` and wrap the whole thing
+                between `*** Begin Patch` / `*** End Patch` markers.
+
+                Examples (all of them are accepted by the current implementation):
+
+                1) Simple in-place replacement
+
+                ```
                 *** Begin Patch
-                *** Update File: path/to/file.source
-                - old line to replace
-                + new replacement line
+                *** Update File: src/main.py
+                -print("foo")
+                +print("bar")
                 *** End Patch
+                ```
 
-                Processing:
-                1. Strip the Begin/End markers and extract the file path.
-                2. Run simple find-and-replace for each `- old` → `+ new` pair.
+                2) Multi-hunk patch (note the blank line between hunks)
 
-                Returns `"Done!"` on success or an error message on failure.
+                ```
+                *** Begin Patch
+                *** Update File: src/main.py
+                -print("foo")
+                +print("foo bar")
+
+                -print("baz")
+                +print("baz qux")
+                *** End Patch
+                ```
+
+                3) Prepending a header by replacing the first line (every hunk still starts
+                   with a `-` line):
+
+                ```
+                *** Begin Patch
+                *** Update File: README.md
+                -# Old Title
+                +# My Project
+                +# Old Title
+                *** End Patch
+                ```
+
+                4) Pure deletion (no `+` lines):
+
+                ```
+                *** Begin Patch
+                *** Update File: src/config.py
+                -unwanted_setting = True
+                *** End Patch
+                ```
+
+                The plugin replies with `Done!` on success or a descriptive error otherwise.
                 "#
                 .to_string(),
             ),
@@ -131,8 +161,10 @@ pub static GET_WORKING_DIRECTORY_CONTENT: Lazy<Tool> = Lazy::new(|| {
         function: Some(FunctionToCall {
             name: FunctionName::GetWorkingDirectoryContent.to_string(),
             description: Some(
-                "Get complete structure of directories and files within the working directory, current dir \
-                 is a working dir, i.e. `.` is the roor project"
+                r#"Recursively list files and directories in `ls -R` style.
+                By default, respects `.gitignore` rules; set `respect_gitignore` to false to include gitignored files.
+                Top-level directory is listed as `.:`, subdirectories as `./path:` sections.
+                Returns the output as a single text block."#
                     .to_string(),
             ),
             parameters: json!({
@@ -140,11 +172,16 @@ pub static GET_WORKING_DIRECTORY_CONTENT: Lazy<Tool> = Lazy::new(|| {
                 "properties": {
                     "directory_path": {
                         "type": "string",
-                        "description": "The path of the directory where content to search is stored",
+                        "description": "The path of the directory to list (use `.` for project root)."
                     },
+                    "respect_gitignore": {
+                        "type": "boolean",
+                        "description": "Whether to respect .gitignore rules (defaults to true). Set to false to include gitignored files.",
+                        "default": true
+                    }
                 },
-                "required": ["directory_path"],
-                "additionalProperties": false,
+                "required": ["directory_path", "respect_gitignore"],
+                "additionalProperties": false
             })
             .as_object()
             .cloned(),

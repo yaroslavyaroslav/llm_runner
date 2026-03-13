@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::Result;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -521,7 +521,8 @@ mod tests {
                 tool_calls: None,
                 path: None,
                 scope: None,
-                tool_call_id: None
+                tool_call_id: None,
+                provider_metadata: None,
             }
         );
 
@@ -535,7 +536,8 @@ mod tests {
                 tool_calls: None,
                 path: None,
                 scope: None,
-                tool_call_id: None
+                tool_call_id: None,
+                provider_metadata: None,
             }
         );
 
@@ -549,6 +551,7 @@ mod tests {
                 tool_calls: Some(vec![ToolCall {
                     id: "call_f4Ixx2ruFvbbqifrMKZ8Cxju".to_string(),
                     r#type: "function".to_string(),
+                    thought_signature: None,
                     function: Function {
                         name: "create_file".to_string(),
                         arguments: "{\"file_path\":\"test_response.txt\"}".to_string(),
@@ -556,7 +559,8 @@ mod tests {
                 }]),
                 path: None,
                 scope: None,
-                tool_call_id: None
+                tool_call_id: None,
+                provider_metadata: None,
             }
         );
 
@@ -569,7 +573,8 @@ mod tests {
                 tool_calls: None,
                 path: None,
                 scope: None,
-                tool_call_id: Some("call_f4Ixx2ruFvbbqifrMKZ8Cxju".to_string())
+                tool_call_id: Some("call_f4Ixx2ruFvbbqifrMKZ8Cxju".to_string()),
+                provider_metadata: None,
             }
         );
     }

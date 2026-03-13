@@ -1,12 +1,12 @@
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::{Arc, atomic::AtomicBool};
 
 use anyhow::Result;
-use tokio::sync::{mpsc::Sender, Mutex};
+use tokio::sync::{Mutex, mpsc::Sender};
 
 use crate::{
     cacher::Cacher,
     network_client::NetworkClient,
-    openai_network_types::{OpenAIResponse, ToolCall},
+    openai_network_types::ToolCall,
     types::{AssistantSettings, CacheEntry, InputKind, SublimeInputContent},
 };
 
@@ -53,34 +53,24 @@ impl LlmRunner {
 
         // TODO: To make type to cast conditional to support various of protocols
         let result = provider
-            .execute_request::<OpenAIResponse>(
+            .execute_request(
+                assistant_settings.clone(),
                 request,
                 Arc::clone(&sender),
                 Arc::clone(&cancel_flag),
-                assistant_settings.stream,
             )
             .await;
 
         if let Some(tool_calls) = result
             .as_ref()
             .ok()
-            .and_then(|r| {
-                r.choices
-                    .first()?
-                    .message
-                    .tool_calls
-                    .clone()
-            })
+            .and_then(|message| message.tool_calls.clone())
         {
             if let Ok(ref message) = result {
                 cacher
                     .lock()
                     .await
-                    .write_entry(&CacheEntry::from(
-                        message.clone().choices[0]
-                            .message
-                            .clone(),
-                    ))
+                    .write_entry(&CacheEntry::from(message.clone()))
                     .ok();
             }
 
@@ -104,11 +94,7 @@ impl LlmRunner {
             cacher
                 .lock()
                 .await
-                .write_entry(&CacheEntry::from(
-                    result?.choices[0]
-                        .message
-                        .clone(),
-                ))
+                .write_entry(&CacheEntry::from(result?))
         } else {
             result.map(|_| ())
         }

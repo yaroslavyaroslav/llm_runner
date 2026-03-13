@@ -98,8 +98,60 @@ def test_assistant_settings_real():
     assert settings.api_type == ApiType.OpenAi
 
 
+def test_assistant_settings_supports_new_provider_types():
+    anthropic = AssistantSettings(
+        {
+            'name': 'Claude',
+            'chat_model': 'claude-sonnet-4-5',
+            'api_type': 'anthropic',
+            'url': 'https://api.anthropic.com/v1/messages',
+        }
+    )
+    assert anthropic.api_type == ApiType.Anthropic
+
+    responses = AssistantSettings(
+        {
+            'name': 'Responses',
+            'chat_model': 'gpt-5',
+            'api_type': 'open_ai_responses',
+            'url': 'https://api.openai.com/v1/responses',
+        }
+    )
+    assert responses.api_type == ApiType.OpenAiResponses
+
+    google = AssistantSettings(
+        {
+            'name': 'Gemini',
+            'chat_model': 'gemini-2.5-flash',
+            'api_type': 'google',
+            'url': 'https://generativelanguage.googleapis.com/v1beta',
+        }
+    )
+    assert google.api_type == ApiType.Google
+
+    legacy_typo = AssistantSettings(
+        {
+            'name': 'Legacy Claude',
+            'chat_model': 'claude',
+            'api_type': 'antropic',
+        }
+    )
+    assert legacy_typo.api_type == ApiType.Anthropic
+
+
+def test_assistant_settings_default_provider_is_preserved():
+    settings = AssistantSettings({'name': 'Default only'})
+
+    assert settings.api_type == ApiType.PlainText
+    assert settings.url == 'https://api.openai.com/v1/chat/completions'
+
+
 def test_python_worker_plain_run():
-    worker = Worker(window_id=101, path=PATH, proxy=os.environ.get('PROXY'))
+    proxy = os.environ.get('PROXY')
+    if proxy is not None:
+        worker = Worker(window_id=101, path=PATH, proxy=proxy)
+    else:
+        worker = Worker(window_id=101, path=PATH)
 
     some_list: List[str] = []
     error_list: List[str] = []
@@ -122,7 +174,7 @@ def test_python_worker_plain_run():
         'chat_model': 'gpt-4o-mini',
         'assistant_role': "You're echo bot. You'r just responsing with what you've been asked for",
         'url': 'https://api.openai.com/v1/chat/completions',
-        'token': os.getenv('OPENAI_API_TOKEN'),
+        'token': os.getenv('OPENAI_API_KEY'),
         'stream': False,
         'advertisement': False,
     }
@@ -137,7 +189,11 @@ def test_python_worker_plain_run():
 
 
 def test_python_worker_sse_run():
-    worker = Worker(window_id=101, path=PATH, proxy=os.environ.get('PROXY'))
+    proxy = os.environ.get('PROXY')
+    if proxy is not None:
+        worker = Worker(window_id=101, path=PATH, proxy=proxy)
+    else:
+        worker = Worker(window_id=101, path=PATH)
 
     some_list: List[str] = []
     some_errors: List[str] = []
@@ -160,7 +216,7 @@ def test_python_worker_sse_run():
         'chat_model': 'gpt-4o-mini',
         'assistant_role': "You're echo bot. You'r just responsing with what you've been asked for",
         'url': 'https://api.openai.com/v1/chat/completions',
-        'token': os.getenv('OPENAI_API_TOKEN'),
+        'token': os.getenv('OPENAI_API_KEY'),
         'stream': True,
         'advertisement': False,
     }
@@ -183,7 +239,11 @@ def test_python_worker_sse_run():
 
 
 def test_python_worker_sse_function_run():
-    worker = Worker(window_id=101, path=PATH, proxy=os.environ.get('PROXY'))
+    proxy = os.environ.get('PROXY')
+    if proxy is not None:
+        worker = Worker(window_id=101, path=PATH, proxy=proxy)
+    else:
+        worker = Worker(window_id=101, path=PATH)
 
     some_list: List[str] = []
     some_errors: List[str] = []
@@ -207,7 +267,7 @@ def test_python_worker_sse_function_run():
         'chat_model': 'gpt-4o-mini',
         'assistant_role': "You're the function runner bot. You call a function and then prompt response to the user",
         'url': 'https://api.openai.com/v1/chat/completions',
-        'token': os.getenv('OPENAI_API_TOKEN'),
+        'token': os.getenv('OPENAI_API_KEY'),
         'tools': True,
         'parallel_tool_calls': False,
         'stream': True,
@@ -225,7 +285,11 @@ def test_python_worker_sse_function_run():
 
 @pytest.mark.asyncio
 async def test_python_worker_sse_function_run_cancel():
-    worker = Worker(window_id=101, path=PATH, proxy=os.environ.get('PROXY'))
+    proxy = os.environ.get('PROXY')
+    if proxy is not None:
+        worker = Worker(window_id=101, path=PATH, proxy=proxy)
+    else:
+        worker = Worker(window_id=101, path=PATH)
 
     contents = SublimeInputContent(
         InputKind.ViewSelection, 'This is the test request, provide me 30 words response'
@@ -248,7 +312,7 @@ async def test_python_worker_sse_function_run_cancel():
         'chat_model': 'gpt-4o-mini',
         'assistant_role': "You're echo bot. You'r just responsing with what you've been asked for",
         'url': 'https://api.openai.com/v1/chat/completions',
-        'token': os.getenv('OPENAI_API_TOKEN'),
+        'token': os.getenv('OPENAI_API_KEY'),
         'tools': False,
         'stream': True,
         'advertisement': False,

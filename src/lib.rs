@@ -1,6 +1,7 @@
 mod cacher;
 mod network_client;
 mod openai_network_types;
+mod provider;
 pub mod types;
 
 mod logger;
@@ -11,7 +12,7 @@ mod tools_definition;
 pub mod worker;
 
 use openai_network_types::Roles;
-use py_worker::{drop_all, read_all_cache, read_model, write_model, write_to_cache, PythonWorker};
+use py_worker::{PythonWorker, drop_all, read_all_cache, read_model, write_model, write_to_cache};
 use pyo3::prelude::*;
 use types::{
     ApiType,

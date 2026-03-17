@@ -45,16 +45,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: 3.x
+          python-version: '3.8'
       - name: Build wheels
         if: matrix.platform.target == 'x86_64'
         uses: PyO3/maturin-action@v1
         env:
           OPENSSL_NO_VENDOR: "1"
-          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --interpreter python3.8 python3.13 python3.14
+          args: --release --out dist --interpreter python3.8 python3.13
           sccache: 'true'
           manylinux: auto
           before-script-linux: |
@@ -73,11 +72,9 @@ jobs:
       - name: Build wheels
         if: matrix.platform.target != 'x86_64'
         uses: PyO3/maturin-action@v1
-        env:
-          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --interpreter python3.8 python3.13 python3.14
+          args: --release --out dist --interpreter python3.8 python3.13
           sccache: 'true'
           manylinux: auto
           before-script-linux: |
@@ -93,6 +90,16 @@ jobs:
                 yum install -y openssl openssl-devel perl-IPC-Cmd
                 ;;
             esac
+      - name: Smoke test wheel import
+        run: |
+          py_tag=$(python -c 'import sys; print(f"cp{sys.version_info.major}{sys.version_info.minor}")')
+          wheel=$(find dist -maxdepth 1 -name "*-${py_tag}-${py_tag}-*.whl" | head -n 1)
+          if [ -z "$wheel" ]; then
+            echo "No wheel found in dist for ${py_tag}" >&2
+            exit 1
+          fi
+          python -m pip install --force-reinstall "$wheel"
+          python -c "import llm_runner; print(llm_runner.__file__)"
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -113,14 +120,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: 3.x
+          python-version: '3.8'
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        env:
-          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --interpreter python3.8 python3.13 python3.14
+          args: --release --out dist --interpreter python3.8 python3.13
           manylinux: musllinux_1_2
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -141,7 +146,6 @@ jobs:
         python-version:
           - '3.8'
           - '3.13'
-          - '3.14'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -150,12 +154,18 @@ jobs:
           architecture: ${{ matrix.platform.target }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        env:
-          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --interpreter python
           sccache: 'true'
+      - name: Smoke test wheel import
+        run: |
+          $wheel = (Get-ChildItem dist\*.whl | Select-Object -First 1).FullName
+          if (-not $wheel) {
+            throw "No wheel found in dist"
+          }
+          python -m pip install --force-reinstall "$wheel"
+          python -c "import llm_runner; print(llm_runner.__file__)"
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -182,12 +192,20 @@ jobs:
           python-version: 3.8
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        env:
-          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --interpreter python3.8 python3.13 python3.14
+          args: --release --out dist --interpreter python3.8 python3.13
           sccache: 'true'
+      - name: Smoke test wheel import
+        run: |
+          py_tag=$(python -c 'import sys; print(f"cp{sys.version_info.major}{sys.version_info.minor}")')
+          wheel=$(find dist -maxdepth 1 -name "*-${py_tag}-${py_tag}-*.whl" | head -n 1)
+          if [ -z "$wheel" ]; then
+            echo "No wheel found in dist for ${py_tag}" >&2
+            exit 1
+          fi
+          python -m pip install --force-reinstall "$wheel"
+          python -c "import llm_runner; print(llm_runner.__file__)"
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:

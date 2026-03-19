@@ -91,10 +91,11 @@ Avoid reintroducing older names:
 ## CI Lessons
 
 - CI workflow file: `.github/workflows/CI.yml`
-- The working wheel matrix was trimmed to Python:
-  - `3.8`
-  - `3.13`
-  - `3.14`
+- The working wheel matrix is intentionally pinned, not floating:
+  - smoke/bootstrap Python for `linux`: `3.8`
+  - smoke/bootstrap Python for `musllinux`: `3.8`
+  - smoke/bootstrap Python for `macos`: `3.8`
+  - wheel build matrix for `windows`: `3.8`, `3.13`
 - Stable wheel targets kept in CI:
   - `linux x86_64`
   - `musllinux x86_64`
@@ -109,6 +110,32 @@ Avoid reintroducing older names:
   - `musllinux x86`
   - `musllinux armv7`
 - The main stability fix for Linux/musl was switching `reqwest` to `rustls-tls` and removing the OpenSSL dependency path.
+- For GitHub Actions on Windows, do not use `pip install dist/*.whl` in a `pwsh` step.
+  PowerShell will pass the literal wildcard, so smoke tests can fail with a fake `ModuleNotFoundError` simply because the wheel was never installed.
+- On Unix smoke tests, do not install the "first wheel in dist".
+  Select the wheel matching the current interpreter tag (`cp38`, `cp313`, etc.), or the smoke test may accidentally try an incompatible wheel and produce a misleading platform error.
+- Avoid `actions/setup-python` with `python-version: 3.x` for wheel smoke tests.
+  Hosted runners may move to unsupported interpreters like `3.14`, which makes PyO3/maturin failures look like packaging regressions when they are really runner drift.
+- Windows wheel smoke tests should import the built extension directly after installation.
+  The current known-good check is `python -c "import llm_runner; print(llm_runner.__file__)"`.
+
+## Windows Packaging Notes
+
+- The bad Windows regression in `0.2.13` was the `python3.dll` linkage.
+- The fixed Windows `0.2.14` `cp38 win_amd64` wheel links back to `python38.dll`, matching `0.2.12`.
+- Comparing `0.2.12` and `0.2.14` win_amd64 wheels:
+  - both depend on `python38.dll`
+  - both depend on `VCRUNTIME140.dll`
+  - `0.2.14` is larger and has a different import set, but not the old `python3.dll` mistake
+- Action artifacts and the PyPI-published `0.2.14` wheel were not byte-identical, but they matched on layout, tags, and critical DLL imports.
+
+## Sublime / Package Control Lessons
+
+- When a Sublime user reports a Windows import failure, first verify the actually installed library version from the Sublime log before assuming the latest PyPI wheel is in use.
+- During this session, a user report still showed:
+  - `Installed library "llm_runner" 0.2.13 for Python 3.8`
+  even though `0.2.14` was already present on PyPI.
+- `openai-sublime-text` currently depends on `llm_runner` without a version pin in `dependencies.json`, so if users still receive an older release, suspect Package Control indexing/caching before suspecting the newest wheel.
 
 ## Reference Repo
 

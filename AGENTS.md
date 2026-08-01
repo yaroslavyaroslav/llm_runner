@@ -85,17 +85,16 @@ Avoid reintroducing older names:
 
 ## Python / Build Notes
 
-- Python 3.14 auto-detection can break local PyO3 runs if the interpreter is not pinned intentionally.
+- The 0.3.x release line targets CPython 3.14 only for Sublime Text build 4205+.
+- Pin `PYO3_PYTHON` or maturin's `--interpreter` to Python 3.14 for local builds.
 - `maturin` was used during the session, but installation/setup details should live in skills or private setup docs rather than here.
 
 ## CI Lessons
 
 - CI workflow file: `.github/workflows/CI.yml`
-- The working wheel matrix is intentionally pinned, not floating:
-  - smoke/bootstrap Python for `linux`: `3.8`
-  - smoke/bootstrap Python for `musllinux`: `3.8`
-  - smoke/bootstrap Python for `macos`: `3.8`
-  - wheel build matrix for `windows`: `3.8`, `3.13`
+- The working wheel matrix is intentionally pinned to CPython `3.14` on every platform.
+- Do not restore CPython 3.8 or 3.13 builds on the 0.3.x line. Their frozen
+  Package Control compatibility release is 0.2.14.
 - Stable wheel targets kept in CI:
   - `linux x86_64`
   - `musllinux x86_64`
@@ -115,7 +114,7 @@ Avoid reintroducing older names:
 - On Unix smoke tests, do not install the "first wheel in dist".
   Select the wheel matching the current interpreter tag (`cp38`, `cp313`, etc.), or the smoke test may accidentally try an incompatible wheel and produce a misleading platform error.
 - Avoid `actions/setup-python` with `python-version: 3.x` for wheel smoke tests.
-  Hosted runners may move to unsupported interpreters like `3.14`, which makes PyO3/maturin failures look like packaging regressions when they are really runner drift.
+  Hosted runners may move to an unsupported interpreter, which makes PyO3/maturin failures look like packaging regressions when they are really runner drift.
 - Windows wheel smoke tests should import the built extension directly after installation.
   The current known-good check is `python -c "import llm_runner; print(llm_runner.__file__)"`.
 

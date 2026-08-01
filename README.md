@@ -15,6 +15,7 @@ Core of [OpenAI-sublime-text package](https://github.com/yaroslavyaroslav/OpenAI
 ### Prerequisites
 
 - **Rust**: Ensure `cargo` and `rustc` are installed.
+- **Python 3.14**: The 0.3.x release line targets Sublime Text's Python 3.14 plugin host.
 
 ### Installation
 
@@ -26,19 +27,20 @@ Core of [OpenAI-sublime-text package](https://github.com/yaroslavyaroslav/OpenAI
 
 2. Build the project:
 
-> [!NOTE]
-> `python 3.8`
-
    ```bash
-   maturin build --release
+   maturin build --release --interpreter python3.14
    ```
 
-3. Install the it as dependency for ST (==under python 3.8 venv==):
-> [!NOTE]
-> `python 3.8`
+3. Install the wheel into a Python 3.14 environment for local smoke testing:
+
    ```bash
-   pip install target/wheels/llm_runner-0.2.0-cp38-cp38-macosx_11_0_arm64.whl --target '/path/to/Sublime Text/Lib/python38/' --upgrade
+   uv venv .venv --python 3.14
+   uv pip install --python .venv/bin/python target/wheels/llm_runner-0.3.0-cp314-cp314-*.whl
+   .venv/bin/python -c "import llm_runner; print(llm_runner.__file__)"
    ```
+
+Sublime Text users should install the library through Package Control. The
+0.2.14 wheels remain the frozen compatibility line for older plugin hosts.
 
 ### Usage
 

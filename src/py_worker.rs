@@ -29,9 +29,9 @@ struct TextHandler {
 }
 
 impl TextHandler {
-    fn new(obj: PyObject) -> Self {
+    fn new(obj: Py<PyAny>) -> Self {
         let func = Arc::new(move |s: String| {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let _ = obj.call1(py, (s,));
             });
         });
@@ -45,10 +45,10 @@ struct FunctionHandler {
 }
 
 impl FunctionHandler {
-    fn new(obj: PyObject) -> Self {
+    fn new(obj: Py<PyAny>) -> Self {
         let func = Arc::new(
             move |args: (String, String)| -> String {
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     obj.call1(py, args)
                         .and_then(|ret| ret.extract::<String>(py))
                         .expect("Python function call or extraction failed")
@@ -81,9 +81,9 @@ impl PythonWorker {
         prompt_mode: PromptMode,
         contents: Vec<SublimeInputContent>,
         assistant_settings: AssistantSettings,
-        handler: PyObject,
-        error_handler: PyObject,
-        function_handler: PyObject,
+        handler: Py<PyAny>,
+        error_handler: Py<PyAny>,
+        function_handler: Py<PyAny>,
     ) -> PyResult<()> {
         let rt = Runtime::new().expect("Failed to create runtime");
         let worker_clone = self.worker.clone();
@@ -121,9 +121,9 @@ impl PythonWorker {
         prompt_mode: PromptMode,
         contents: Vec<SublimeInputContent>,
         assistant_settings: AssistantSettings,
-        handler: PyObject,
-        error_handler: PyObject,
-        function_handler: PyObject,
+        handler: Py<PyAny>,
+        error_handler: Py<PyAny>,
+        function_handler: Py<PyAny>,
     ) -> PyResult<()> {
         let rt = Runtime::new().expect("Failed to create runtime");
         let worker_clone = self.worker.clone();
@@ -215,7 +215,7 @@ mod tests {
 
         is_sync::<PythonWorker>();
         is_send::<PythonWorker>();
-        is_send::<PyObject>();
+        is_send::<Py<PyAny>>();
     }
     // This code tested on Python's side
 }

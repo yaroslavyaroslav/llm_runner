@@ -41,6 +41,8 @@ jobs:
         platform:
           - runner: ubuntu-22.04
             target: x86_64
+          - runner: ubuntu-22.04
+            target: aarch64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -69,6 +71,7 @@ jobs:
                 ;;
             esac
       - name: Smoke test wheel import
+        if: matrix.platform.target == 'x86_64'
         run: |
           py_tag=$(python -c 'import sys; print(f"cp{sys.version_info.major}{sys.version_info.minor}")')
           wheel=$(find dist -maxdepth 1 -name "*-${py_tag}-${py_tag}-*.whl" | head -n 1)
@@ -78,6 +81,15 @@ jobs:
           fi
           python -m pip install --force-reinstall "$wheel"
           python -c "import llm_runner; print(llm_runner.__file__)"
+      - name: Verify manylinux ARM64 wheel
+        if: matrix.platform.target == 'aarch64'
+        run: |
+          wheel=$(find dist -maxdepth 1 -name '*-cp314-cp314-manylinux*_aarch64.whl' | head -n 1)
+          if [ -z "$wheel" ]; then
+            echo "No CPython 3.14 manylinux ARM64 wheel found in dist" >&2
+            exit 1
+          fi
+          echo "Verified $wheel"
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
